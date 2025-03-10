@@ -1,0 +1,12 @@
+[package]
+name = "typstex2"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = "4.5.31"
+color-eyre = "0.6.3"
+itertools = "0.14.0"
+tinymist-project = {version = "0.13.2", features=["system", "no-content-hint", "lsp"]}
+typst = "0.13.1"
+typst-eval = "0.13.1"
