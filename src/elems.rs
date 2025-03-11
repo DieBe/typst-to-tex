@@ -43,6 +43,7 @@ macro_rules! define_typed{
     $(unused ($why:literal) {$($name_:ident($native_:path$(;<$vallife_:lifetime>)?)),*$(,)?})+
 
     fn $from_name:ident) => {
+        #[allow(dead_code)]
         pub enum $enum_name {
             $(
                 $name($native)
@@ -50,23 +51,23 @@ macro_rules! define_typed{
             Ignored,
         }
 
-        pub fn $from_name(content: Content) -> Elem {
+        pub fn $from_name<'a>(mut content: Content) -> Elem {
             $(
-                let content = match content.unpack::<$native>() {
-                    Ok(val) => return $enum_name::$name(val),
+                content = match content.into_packed::<$native>() {
+                    Ok(val) => return $enum_name::$name(val.unpack()),
                     Err(content) => content,
                 };
-            );*
+            )*
             $(
                 $(
-                    let content = match content.unpack::<$native_>() {
-                        Ok(_) => {
+                    match content.to_packed::<$native_>() {
+                        Some(_) => {
                             println!("Ignoring {} because {}", stringify!($name_), $why);
                             return $enum_name::Ignored;
                         },
-                        Err(content) => content,
+                        None => {},
                     };
-                );*
+                )*
             )*
             panic!("Did not manage to convert {content:?} into a native value")
         }

@@ -4,9 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+camino = "1.1.9"
 clap = "4.5.31"
 color-eyre = "0.6.3"
+indoc = "2.0.6"
 itertools = "0.14.0"
-tinymist-project = {version = "0.13.2", features=["system", "no-content-hint", "lsp"]}
+tinymist-project = {version = "0.13.2", features=["system", "no-content-hint", "lsp", "fonts"]}
 typst = "0.13.1"
 typst-eval = "0.13.1"
+typst-layout = "0.13.1"
+typst-pdf = "0.13.1"
