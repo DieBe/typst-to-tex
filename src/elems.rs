@@ -108,6 +108,8 @@ enum Elem {
     SequenceElem(SequenceElem),
     StyledElem(StyledElem),
     SymbolElem(SymbolElem),
+    EquationElem(EquationElem),
+    BoxElem(BoxElem),
 };
 
 unused ("Inner element") {
@@ -159,7 +161,6 @@ unused ("Math mode") {
     CancelElem(CancelElem),
     CasesElem(CasesElem),
     ClassElem(ClassElem),
-    EquationElem(EquationElem),
     FracElem(FracElem),
     LimitsElem(LimitsElem),
     LrElem(LrElem),
@@ -197,7 +198,6 @@ unused ("Layout stuff") {
     InlineElem(InlineElem),
     PageElem(PageElem),
     BlockElem(BlockElem),
-    BoxElem(BoxElem),
     ColbreakElem(ColbreakElem),
     ColumnsElem(ColumnsElem),
     FlushElem(FlushElem),
