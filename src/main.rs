@@ -107,14 +107,6 @@ fn compile_subcontent(
             two_sided: None,
         })
         .wrap(),
-        // TextElem::set_top_edge(typst::text::TopEdge::Metric(
-        //     typst::text::TopEdgeMetric::Ascender,
-        // ))
-        // .wrap(),
-        // TextElem::set_bottom_edge(typst::text::BottomEdge::Metric(
-        //     typst::text::BottomEdgeMetric::Descender,
-        // ))
-        // .wrap(),
     ];
     let sc = sc.chain(styles);
     inner_content.materialize(sc);
@@ -147,6 +139,7 @@ pub enum TexBlock {
     },
     Footnote(Box<TexBlock>),
     Math(Utf8PathBuf),
+    InlineCode(Utf8PathBuf),
     Seq(Vec<TexBlock>),
     RawString(String),
     Maybe(Option<Box<TexBlock>>),
@@ -192,6 +185,9 @@ impl TexBlock {
             TexBlock::Math(pdf) => {
                 format!(r#"\raisebox{{-0.5em}}[1em]{{\includegraphics{{../{pdf}}}}}"#)
             }
+            TexBlock::InlineCode(pdf) => {
+                format!(r#"\raisebox{{-0.5em}}[1em]{{\includegraphics{{../{pdf}}}}}"#)
+            }
             TexBlock::Ref(l) => {
                 let sup = match l.split(":").next() {
                     None => "",
@@ -201,7 +197,7 @@ impl TexBlock {
                     Some("tab") => "Tab.",
                     _other => {
                         // println!("Unknown label supplement, assuming citation: {other:?}");
-                        return format!("\\cite{{{l}}}");
+                        return format!("~\\cite{{{l}}}");
                     }
                 };
 
@@ -372,8 +368,9 @@ fn into_latex(
                 };
                 TexBlock::RawString(raw_content)
             } else {
-                println!("Unsupported inline RawElem");
-                TexBlock::Nothing
+                let filename = compile_subcontent(world, raw_elem.pack(), sc, engine)?;
+
+                TexBlock::InlineCode(filename)
             }
         }
         elems::Elem::SmallcapsElem(_smallcaps_elem) => {
@@ -381,8 +378,8 @@ fn into_latex(
             TexBlock::Nothing
         }
         elems::Elem::SmartQuoteElem(_smart_quote_elem) => {
-            println!("Unsupported SmartQuoteElem");
-            TexBlock::Nothing
+            println!("Note: SmartQuoteElem is replaced with ('\"'), you may have to edit this manually for best looks");
+            TexBlock::RawString("\"".to_string())
         }
         elems::Elem::SpaceElem(_) => TexBlock::String(" ".to_string()),
         elems::Elem::StrikeElem(_strike_elem) => {
@@ -417,7 +414,6 @@ fn into_latex(
             into_latex(styled_elem.child, wild_figures, sc, world, engine)?
         }
         elems::Elem::SymbolElem(_symbol_elem) => {
-            println!("Unsupported SymbolElem");
             TexBlock::Nothing
         }
         elems::Elem::BoxElem(box_elem) => {
