@@ -7,6 +7,7 @@ use clap::Parser;
 use elems::from_native;
 use itertools::Itertools;
 use rand::random;
+use regex::Regex;
 // use ecow::{eco_format, EcoString};
 use tinymist_project::CompileOnceArgs;
 use tinymist_project::WorldProvider;
@@ -70,6 +71,20 @@ fn eval_typst(world: &dyn World) -> Result<Content> {
     let content = module.content();
 
     Ok(content)
+}
+
+fn label_to_supplement(l: &str) -> Option<String> {
+    match l.split(":").next() {
+        None => None,
+        Some("fig") => Some("Fig.".to_string()),
+        Some("sec") => Some("Section".to_string()),
+        Some("lst") => Some("Listing".to_string()),
+        Some("tab") => Some("Tab.".to_string()),
+        _other => {
+            // println!("Unknown label supplement, assuming citation: {other:?}");
+            None
+        }
+    }
 }
 
 fn compile_subcontent(
@@ -136,6 +151,7 @@ pub enum TexBlock {
     Figure {
         content_file: Utf8PathBuf,
         caption: Option<Box<TexBlock>>,
+        supplement: Option<String>,
     },
     Footnote(Box<TexBlock>),
     Math(Utf8PathBuf),
@@ -154,7 +170,6 @@ impl TexBlock {
                 let mut s = s.clone();
                 for (label, file) in wild_figures {
                     let repl = format!("#wild:{label}#");
-                    println!("Replacing {repl} with {file}");
                     s = s.replace(&repl, file.as_str());
                 }
                 s
@@ -165,10 +180,17 @@ impl TexBlock {
             TexBlock::Figure {
                 content_file,
                 caption,
+                supplement
             } => {
+                let supplement_override = match supplement {
+                    Some(s) => format!(r"\renewcommand\figurename{{{}}}", s.to_string()),
+                    None => "".to_string(),
+                };
+                println!("Using {supplement_override:?}");
                 indoc::formatdoc!(
                     r#"
                     \begin{{figure}}[t]
+                        {supplement_override}
                         \centering
                         \maxsizebox{{\textwidth}}{{!}}{{\includegraphics{{../{content_file}}}}}
                         {caption}
@@ -189,14 +211,9 @@ impl TexBlock {
                 format!(r#"\raisebox{{-0.5em}}[1em]{{\includegraphics{{../{pdf}}}}}"#)
             }
             TexBlock::Ref(l) => {
-                let sup = match l.split(":").next() {
-                    None => "",
-                    Some("fig") => "Fig.",
-                    Some("sec") => "Section",
-                    Some("lst") => "Listing",
-                    Some("tab") => "Tab.",
-                    _other => {
-                        // println!("Unknown label supplement, assuming citation: {other:?}");
+                let sup = match label_to_supplement(l) {
+                    Some(sup) => sup,
+                    None => {
                         return format!("~\\cite{{{l}}}");
                     }
                 };
@@ -277,6 +294,7 @@ fn into_latex(
             TexBlock::Figure {
                 content_file: filename,
                 caption,
+                supplement: label_text.and_then(|s| label_to_supplement(&s))
             }
         }
         elems::Elem::EquationElem(eq) => {
@@ -377,9 +395,13 @@ fn into_latex(
             println!("Unsupported SmallcapsElem");
             TexBlock::Nothing
         }
-        elems::Elem::SmartQuoteElem(_smart_quote_elem) => {
+        elems::Elem::SmartQuoteElem(elem) => {
             println!("Note: SmartQuoteElem is replaced with ('\"'), you may have to edit this manually for best looks");
-            TexBlock::RawString("\"".to_string())
+            if elem.double(sc) {
+                TexBlock::RawString("\"".to_string())
+            } else {
+                TexBlock::RawString("\'".to_string())
+            }
         }
         elems::Elem::SpaceElem(_) => TexBlock::String(" ".to_string()),
         elems::Elem::StrikeElem(_strike_elem) => {
@@ -413,9 +435,7 @@ fn into_latex(
             let sc = sc.chain(styled_elem.styles.as_slice());
             into_latex(styled_elem.child, wild_figures, sc, world, engine)?
         }
-        elems::Elem::SymbolElem(_symbol_elem) => {
-            TexBlock::Nothing
-        }
+        elems::Elem::SymbolElem(_symbol_elem) => TexBlock::Nothing,
         elems::Elem::BoxElem(box_elem) => {
             println!("unsupported box elem {box_elem:?}");
             TexBlock::Nothing
@@ -460,8 +480,24 @@ fn main() -> Result<()> {
 
     let latex_source = template.replace("%CONTENT%", &latex.emit(&wild_figures));
 
+    // Citation groups are easier to fix with regex than to look for them in the source
+    let cite_fix_regex = Regex::new(r"(\s+~\\cite\{([^}]*)\})+").unwrap();
+    let cite_body_regex = Regex::new(r"\s+~\\cite\{([^}]*)\}").unwrap();
+    let latex_source =
+        cite_fix_regex.replace_all(&latex_source, |captures: &regex::Captures<'_>| {
+            let inner = captures.get(0).unwrap().as_str();
+            let inner_caps = cite_body_regex.captures_iter(inner);
+            format!(
+                r"\cite{{{}}}",
+                inner_caps
+                    .map(|cap| cap.get(1).unwrap().as_str())
+                    .join(",")
+            )
+        });
+
     std::fs::create_dir_all("out").with_context(|| "Failed to create dir out")?;
-    std::fs::write("out/out.tex", latex_source).with_context(|| "Failed to write out/out.tex")?;
+    std::fs::write("out/out.tex", latex_source.to_string())
+        .with_context(|| "Failed to write out/out.tex")?;
 
     Ok(())
 }
