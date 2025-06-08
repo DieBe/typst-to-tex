@@ -192,7 +192,7 @@ impl TexBlock {
                     \begin{{figure}}[t]
                         {supplement_override}
                         \centering
-                        \maxsizebox{{\textwidth}}{{!}}{{\includegraphics{{../{content_file}}}}}
+                        \maxsizebox{{\textwidth}}{{!}}{{\includegraphics{{{content_file}}}}}
                         {caption}
                     \end{{figure}}
                     "#,
@@ -205,10 +205,10 @@ impl TexBlock {
                 )
             }
             TexBlock::Math(pdf) => {
-                format!(r#"\raisebox{{-0.5em}}[1em]{{\includegraphics{{../{pdf}}}}}"#)
+                format!(r#"\raisebox{{-0.5em}}[1em]{{\includegraphics{{{pdf}}}}}"#)
             }
             TexBlock::InlineCode(pdf) => {
-                format!(r#"\raisebox{{-0.5em}}[1em]{{\includegraphics{{../{pdf}}}}}"#)
+                format!(r#"\raisebox{{-0.5em}}[1em]{{\includegraphics{{{pdf}}}}}"#)
             }
             TexBlock::Ref(l) => {
                 let sup = match label_to_supplement(l) {
@@ -495,8 +495,8 @@ fn main() -> Result<()> {
             )
         });
 
-    std::fs::create_dir_all("out").with_context(|| "Failed to create dir out")?;
-    std::fs::write("out/out.tex", latex_source.to_string())
+    let filename = format!("{}.tex", args.compile.input.expect("Got very far without a filename specified."));
+    std::fs::write(filename, latex_source.to_string())
         .with_context(|| "Failed to write out/out.tex")?;
 
     Ok(())
