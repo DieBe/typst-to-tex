@@ -4,7 +4,9 @@ use std::collections::HashMap;
 
 use camino::Utf8PathBuf;
 use clap::Parser;
+use color_eyre::eyre::anyhow;
 use elems::from_native;
+use facet::Facet;
 use itertools::Itertools;
 use rand::random;
 use regex::Regex;
@@ -20,7 +22,6 @@ use typst::engine::Sink;
 use typst::engine::Traced;
 use typst::foundations::Content;
 use typst::foundations::NativeElement;
-use typst::foundations::Repr;
 use typst::foundations::Smart;
 use typst::foundations::StyleChain;
 use typst::introspection::Introspector;
@@ -42,14 +43,19 @@ use typst_layout::layout_document;
 use typst_pdf::pdf;
 use typst_pdf::PdfOptions;
 
+#[derive(Facet)]
+pub struct Config {
+    template: Utf8PathBuf,
+
+    #[facet(default = "[t]")]
+    figure_placement: String,
+}
+
 /// Common arguments of compile, watch, and query.
 #[derive(Debug, Clone, Parser, Default)]
 pub struct CompileArgs {
     #[clap(flatten)]
     pub compile: CompileOnceArgs,
-
-    #[clap(short, long)]
-    template: Utf8PathBuf,
 }
 
 fn eval_typst(world: &dyn World) -> Result<Content> {
@@ -88,7 +94,6 @@ fn label_to_supplement(l: &str) -> Option<String> {
 }
 
 fn compile_subcontent(
-    world: &dyn World,
     mut inner_content: Content,
     sc: StyleChain,
     engine: &mut Engine,
@@ -163,7 +168,7 @@ pub enum TexBlock {
 }
 
 impl TexBlock {
-    fn emit(&self, wild_figures: &HashMap<String, Utf8PathBuf>) -> String {
+    fn emit(&self, wild_figures: &HashMap<String, Utf8PathBuf>, config: &Config) -> String {
         match self {
             TexBlock::String(s) => s.clone(),
             TexBlock::RawString(s) => {
@@ -180,23 +185,23 @@ impl TexBlock {
             TexBlock::Figure {
                 content_file,
                 caption,
-                supplement
+                supplement,
             } => {
+                let placement = &config.figure_placement;
                 let supplement_override = match supplement {
                     Some(s) => format!(r"\renewcommand\figurename{{{}}}", s.to_string()),
                     None => "".to_string(),
                 };
-                println!("Using {supplement_override:?}");
                 indoc::formatdoc!(
                     r#"
-                    \begin{{figure}}[t]
+                    \begin{{figure}}{placement}
                         {supplement_override}
                         \centering
                         \maxsizebox{{\textwidth}}{{!}}{{\includegraphics{{{content_file}}}}}
                         {caption}
                     \end{{figure}}
                     "#,
-                    caption = if let Some(caption) = caption.as_ref().map(|s| s.emit(wild_figures))
+                    caption = if let Some(caption) = caption.as_ref().map(|s| s.emit(wild_figures, config))
                     {
                         format!(r"\caption{{{caption}}}")
                     } else {
@@ -221,12 +226,12 @@ impl TexBlock {
                 format!("{sup} \\ref{{{l}}}")
             }
             TexBlock::Footnote(f) => {
-                format!("\\footnote{{{}}}", f.emit(wild_figures))
+                format!("\\footnote{{{}}}", f.emit(wild_figures, config))
             }
-            TexBlock::Seq(inner) => inner.iter().map(|i| i.emit(wild_figures)).join(""),
+            TexBlock::Seq(inner) => inner.iter().map(|i| i.emit(wild_figures, config)).join(""),
             TexBlock::Maybe(inner) => inner
                 .as_ref()
-                .map(|inner| inner.emit(wild_figures))
+                .map(|inner| inner.emit(wild_figures, config))
                 .unwrap_or_else(|| String::new()),
             TexBlock::Nothing => String::new(),
         }
@@ -239,6 +244,7 @@ fn into_latex(
     // substituted in raw latex blocks, indexed by the // label attached to
     // them.
     wild_figures: &mut HashMap<String, Utf8PathBuf>,
+    config: &Config,
     sc: StyleChain,
     world: &dyn World,
     engine: &mut Engine,
@@ -257,11 +263,11 @@ fn into_latex(
         }
         elems::Elem::EmphElem(emph_elem) => TexBlock::String(format!(
             "\\textit{{{}}}",
-            into_latex(emph_elem.body, wild_figures, sc, world, engine)?.emit(wild_figures)
+            into_latex(emph_elem.body, wild_figures, config, sc, world, engine)?.emit(wild_figures, config)
         )),
         elems::Elem::StrongElem(strong_elem) => TexBlock::String(format!(
             "\\textbf{{{}}}",
-            into_latex(strong_elem.body, wild_figures, sc, world, engine)?.emit(wild_figures)
+            into_latex(strong_elem.body, wild_figures, config, sc, world, engine)?.emit(wild_figures, config)
         )),
         elems::Elem::EnumElem(_enum_elem) => {
             println!("Unsupported EnumElem");
@@ -270,7 +276,7 @@ fn into_latex(
         elems::Elem::FigureElem(figure_elem) => {
             let content = FigureElem::new(figure_elem.body.clone());
 
-            let filename = compile_subcontent(world, content.pack(), sc, engine)?;
+            let filename = compile_subcontent(content.pack(), sc, engine)?;
 
             if let Some(Some(Supplement::Content(c))) = figure_elem.supplement(sc).clone().custom()
             {
@@ -286,7 +292,7 @@ fn into_latex(
             let caption = figure_elem
                 .caption(sc)
                 .as_ref()
-                .map(|cap| into_latex(cap.body.clone(), wild_figures, sc, world, engine))
+                .map(|cap| into_latex(cap.body.clone(), wild_figures, config, sc, world, engine))
                 .transpose()?
                 .map(|cap| TexBlock::Seq(vec![cap, label]))
                 .map(Box::new);
@@ -294,11 +300,11 @@ fn into_latex(
             TexBlock::Figure {
                 content_file: filename,
                 caption,
-                supplement: label_text.and_then(|s| label_to_supplement(&s))
+                supplement: label_text.and_then(|s| label_to_supplement(&s)),
             }
         }
         elems::Elem::EquationElem(eq) => {
-            let filename = compile_subcontent(world, eq.pack(), sc, engine)?;
+            let filename = compile_subcontent(eq.pack(), sc, engine)?;
 
             TexBlock::Math(filename)
         }
@@ -307,7 +313,8 @@ fn into_latex(
                 TexBlock::Footnote(Box::new(into_latex(
                     body.clone(),
                     wild_figures,
-                    sc,
+                    config,
+sc,
                     world,
                     engine,
                 )?))
@@ -332,7 +339,7 @@ fn into_latex(
 
             let heading = TexBlock::String(format!(
                 "\\{h}{{{}}}",
-                into_latex(heading_elem.body, wild_figures, sc, world, engine)?.emit(wild_figures)
+                into_latex(heading_elem.body, wild_figures, config, sc, world, engine)?.emit(wild_figures, config)
             ));
 
             TexBlock::Seq(vec![heading, label])
@@ -355,7 +362,7 @@ fn into_latex(
             TexBlock::Nothing
         }
         elems::Elem::ParElem(par_elem) => {
-            into_latex(par_elem.body, wild_figures, sc, world, engine)?
+            into_latex(par_elem.body, wild_figures, config, sc, world, engine)?
         }
         elems::Elem::ParLineMarker(_) => TexBlock::Nothing,
         elems::Elem::ParbreakElem(_) => TexBlock::String("\n\n".to_string()),
@@ -386,7 +393,7 @@ fn into_latex(
                 };
                 TexBlock::RawString(raw_content)
             } else {
-                let filename = compile_subcontent(world, raw_elem.pack(), sc, engine)?;
+                let filename = compile_subcontent(raw_elem.pack(), sc, engine)?;
 
                 TexBlock::InlineCode(filename)
             }
@@ -428,12 +435,12 @@ fn into_latex(
         elems::Elem::SequenceElem(s) => TexBlock::Seq(
             s.children
                 .iter()
-                .map(|content| into_latex(content.clone(), wild_figures, sc, world, engine))
+                .map(|content| into_latex(content.clone(), wild_figures, config, sc, world, engine))
                 .collect::<Result<_>>()?,
         ),
         elems::Elem::StyledElem(styled_elem) => {
             let sc = sc.chain(styled_elem.styles.as_slice());
-            into_latex(styled_elem.child, wild_figures, sc, world, engine)?
+            into_latex(styled_elem.child, wild_figures, config, sc, world, engine)?
         }
         elems::Elem::SymbolElem(_symbol_elem) => TexBlock::Nothing,
         elems::Elem::BoxElem(box_elem) => {
@@ -449,8 +456,17 @@ fn main() -> Result<()> {
     // Parse command line arguments
     let args = CompileArgs::parse();
 
-    let template = std::fs::read_to_string(&args.template)
-        .with_context(|| format!("Failed to read template from {}", args.template))?;
+    let config_content =
+        std::fs::read_to_string("ttt.toml").context(format!("Failed to read ttt.toml"))?;
+
+    let config = match facet_toml::from_str::<Config>(&config_content) {
+        Ok(config) => config,
+        // Not entirely sure why this is needed, but lifetimes get in the way without it
+        Err(e) => return Err(anyhow!("{e:#}").into())
+    };
+
+    let template = std::fs::read_to_string(&config.template)
+        .with_context(|| format!("Failed to read template from {}", config.template))?;
 
     let universe = args
         .compile
@@ -476,9 +492,9 @@ fn main() -> Result<()> {
     };
 
     let mut wild_figures = HashMap::new();
-    let latex = into_latex(content, &mut wild_figures, sc, &world, &mut engine)?;
+    let latex = into_latex(content, &mut wild_figures, &config, sc, &world, &mut engine)?;
 
-    let latex_source = template.replace("%CONTENT%", &latex.emit(&wild_figures));
+    let latex_source = template.replace("%CONTENT%", &latex.emit(&wild_figures, &config));
 
     // Citation groups are easier to fix with regex than to look for them in the source
     let cite_fix_regex = Regex::new(r"(\s+~\\cite\{([^}]*)\})+").unwrap();
@@ -489,13 +505,16 @@ fn main() -> Result<()> {
             let inner_caps = cite_body_regex.captures_iter(inner);
             format!(
                 r"\cite{{{}}}",
-                inner_caps
-                    .map(|cap| cap.get(1).unwrap().as_str())
-                    .join(",")
+                inner_caps.map(|cap| cap.get(1).unwrap().as_str()).join(",")
             )
         });
 
-    let filename = format!("{}.tex", args.compile.input.expect("Got very far without a filename specified."));
+    let filename = format!(
+        "{}.tex",
+        args.compile
+            .input
+            .expect("Got very far without a filename specified.")
+    );
     std::fs::write(filename, latex_source.to_string())
         .with_context(|| "Failed to write out/out.tex")?;
 

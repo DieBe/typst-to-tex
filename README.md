@@ -37,9 +37,12 @@ For including generated PDFs, you need to use the `graphicx` and `adjustbox` pac
 \end{document}
 ```
 
+Then create a `ttt.toml` config file. By default, you only need to specify the template,
+but there are a few more options that can be set there (see the Config struct for details)
+
 Then run
 ```
-ttt --template template.tex your_file.typ
+ttt your_file.typ
 ```
 which will create `generated` containing the PDFs that will be included, and `your_file.typ.tex` which is the output latex file.
 
