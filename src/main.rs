@@ -1,6 +1,8 @@
 mod elems;
+mod world;
 
 use std::collections::HashMap;
+use std::env::current_dir;
 
 use camino::Utf8PathBuf;
 use clap::Parser;
@@ -10,9 +12,6 @@ use facet::Facet;
 use itertools::Itertools;
 use rand::random;
 use regex::Regex;
-// use ecow::{eco_format, EcoString};
-use tinymist_project::CompileOnceArgs;
-use tinymist_project::WorldProvider;
 
 use color_eyre::{eyre::Context, Result};
 use typst::comemo::Track;
@@ -43,6 +42,8 @@ use typst_layout::layout_document;
 use typst_pdf::pdf;
 use typst_pdf::PdfOptions;
 
+use crate::world::TypstWrapperWorld;
+
 #[derive(Facet)]
 pub struct Config {
     template: Utf8PathBuf,
@@ -60,8 +61,7 @@ pub struct Config {
 /// Common arguments of compile, watch, and query.
 #[derive(Debug, Clone, Parser, Default)]
 pub struct CompileArgs {
-    #[clap(flatten)]
-    pub compile: CompileOnceArgs,
+    pub input: Utf8PathBuf,
 }
 
 fn eval_typst(world: &dyn World) -> Result<Content> {
@@ -209,7 +209,8 @@ impl TexBlock {
                         {caption}
                     \end{{figure}}
                     "#,
-                    caption = if let Some(caption) = caption.as_ref().map(|s| s.emit(wild_figures, config))
+                    caption = if let Some(caption) =
+                        caption.as_ref().map(|s| s.emit(wild_figures, config))
                     {
                         format!(r"\caption{{{caption}}}")
                     } else {
@@ -273,11 +274,13 @@ fn into_latex(
         }
         elems::Elem::EmphElem(emph_elem) => TexBlock::String(format!(
             "\\textit{{{}}}",
-            into_latex(emph_elem.body, wild_figures, config, sc, world, engine)?.emit(wild_figures, config)
+            into_latex(emph_elem.body, wild_figures, config, sc, world, engine)?
+                .emit(wild_figures, config)
         )),
         elems::Elem::StrongElem(strong_elem) => TexBlock::String(format!(
             "\\textbf{{{}}}",
-            into_latex(strong_elem.body, wild_figures, config, sc, world, engine)?.emit(wild_figures, config)
+            into_latex(strong_elem.body, wild_figures, config, sc, world, engine)?
+                .emit(wild_figures, config)
         )),
         elems::Elem::EnumElem(_enum_elem) => {
             println!("Unsupported EnumElem");
@@ -324,7 +327,7 @@ fn into_latex(
                     body.clone(),
                     wild_figures,
                     config,
-sc,
+                    sc,
                     world,
                     engine,
                 )?))
@@ -349,7 +352,8 @@ sc,
 
             let heading = TexBlock::String(format!(
                 "\\{h}{{{}}}",
-                into_latex(heading_elem.body, wild_figures, config, sc, world, engine)?.emit(wild_figures, config)
+                into_latex(heading_elem.body, wild_figures, config, sc, world, engine)?
+                    .emit(wild_figures, config)
             ));
 
             TexBlock::Seq(vec![heading, label])
@@ -466,25 +470,26 @@ fn main() -> Result<()> {
     // Parse command line arguments
     let mut args = CompileArgs::parse();
 
-    args.compile.inputs.push(("is_ttt".to_string(), "true".to_string()));
-
     let config_content =
         std::fs::read_to_string("ttt.toml").context(format!("Failed to read ttt.toml"))?;
 
     let config = match facet_toml::from_str::<Config>(&config_content) {
         Ok(config) => config,
         // Not entirely sure why this is needed, but lifetimes get in the way without it
-        Err(e) => return Err(anyhow!("{e:#}").into())
+        Err(e) => return Err(anyhow!("{e:#}").into()),
     };
 
     let template = std::fs::read_to_string(&config.template)
         .with_context(|| format!("Failed to read template from {}", config.template))?;
 
-    let universe = args
-        .compile
-        .resolve()
-        .with_context(|| "failed to call resolve")?;
-    let world = universe.snapshot();
+    let world = TypstWrapperWorld::new(
+        current_dir()
+            .with_context(|| "Failed to get current dir")?
+            .to_str()
+            .ok_or_else(|| anyhow!("Current dir was not a unicode path"))?
+            .to_string(),
+        args.input.clone().into_string(),
+    );
 
     let content = eval_typst(&world)?;
 
@@ -523,9 +528,7 @@ fn main() -> Result<()> {
 
     let filename = format!(
         "{}.tex",
-        args.compile
-            .input
-            .expect("Got very far without a filename specified.")
+        args.input
     );
     std::fs::write(filename, latex_source.to_string())
         .with_context(|| "Failed to write out/out.tex")?;

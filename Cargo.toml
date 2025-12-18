@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 camino = "1.1.9"
-clap = "4.5.31"
+clap = { version = "4.5.31", features = ["derive"] }
 color-eyre = "0.6.3"
 facet = { version = "0.32.2", features = ["camino"] }
 facet-macros = "0.32.2"
@@ -14,12 +14,20 @@ indoc = "2.0.6"
 itertools = "0.14.0"
 rand = "0.9.0"
 regex = "1.11.1"
-tinymist-project = {version = "0.13.2", features=["system", "no-content-hint", "lsp", "fonts"]}
+time = "0.3.44"
 typst = "0.13.1"
 typst-eval = "0.13.1"
 typst-layout = "0.13.1"
 typst-library = "0.13.1"
 typst-pdf = "0.13.1"
+zune-inflate = { version = "0.2", default-features = false, features = [
+  "gzip",
+  "std",
+] }
+tar = "0.4"
+ureq = "2.9"
+ttf-parser = "0.25"
+typst-kit = { version = "0.13.1", features = ["embed-fonts"] }
 
 [patch.crates-io]
 # typst = {git = "https://github.com/TheZoq2/typst.git", branch = "state_pub"}
