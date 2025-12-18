@@ -2,7 +2,6 @@ use typst::foundations::Content;
 use typst::model::{EnumItem, ListItem, TermItem};
 use typst::{
     foundations::{ContextElem, SequenceElem, StyledElem, SymbolElem, TargetElem},
-    html::{FrameElem, HtmlElem},
     introspection::{CounterDisplayElem, MetadataElem, TagElem},
     layout::{
         AlignElem, BlockElem, BoxElem, ColbreakElem, ColumnsElem, FlushElem, GridCell, GridElem,
@@ -24,7 +23,6 @@ use typst::{
         StrongElem, TableCell, TableElem, TableFooter, TableHLine, TableHeader, TableVLine,
         TermsElem,
     },
-    pdf::EmbedElem,
     text::{
         HighlightElem, LinebreakElem, RawElem, RawLine, SmallcapsElem, SmartQuoteElem, SpaceElem,
         StrikeElem, SubElem, SuperElem, TextElem,
@@ -139,10 +137,6 @@ unused ("Term stuff") {
     TermsElem(TermsElem),
 }
 
-unused ("Just hard to handle") {
-    EmbedElem(EmbedElem),
-    
-}
 
 unused ("Math mode") {
     RootElem(RootElem),
@@ -218,8 +212,6 @@ unused ("Layout stuff") {
 }
 
 unused("HTML stuff") {
-    FrameElem(FrameElem),
-    HtmlElem(HtmlElem),
     CounterDisplayElem(CounterDisplayElem),
     MetadataElem(MetadataElem),
     TagElem(TagElem),

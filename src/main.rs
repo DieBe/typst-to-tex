@@ -21,21 +21,14 @@ use typst::engine::Sink;
 use typst::engine::Traced;
 use typst::foundations::Content;
 use typst::foundations::NativeElement;
-use typst::foundations::Smart;
 use typst::foundations::StyleChain;
 use typst::introspection::Introspector;
-use typst::layout::Abs;
-use typst::layout::Em;
-use typst::layout::Margin;
-use typst::layout::PageElem;
-use typst::layout::Ratio;
-use typst::layout::Rel;
-use typst::layout::Sides;
 use typst::model::FigureElem;
 use typst::model::Supplement;
 use typst::syntax::Span;
 use typst::text::RawContent;
 use typst::Library;
+use typst::LibraryExt;
 use typst::World;
 use typst::ROUTINES;
 use typst_layout::layout_document;
@@ -110,31 +103,31 @@ fn compile_subcontent(
     println!("Compiling {inner_content:?}");
 
     let styles = &[
-        PageElem::set_width(Smart::Auto).wrap(),
-        PageElem::set_height(Smart::Auto).wrap(),
-        PageElem::set_margin(Margin::splat(Some(Smart::Custom(Rel::zero())))).wrap(),
-        PageElem::set_margin(Margin {
-            sides: Sides {
-                left: Some(Smart::Custom(Rel::zero())),
-                right: Some(Smart::Custom(Rel::zero())),
-                top: Some(Smart::Custom(Rel {
-                    rel: Ratio::zero(),
-                    abs: typst::layout::Length {
-                        abs: Abs::zero(),
-                        em: Em::new(0.5),
-                    },
-                })),
-                bottom: Some(Smart::Custom(Rel {
-                    rel: Ratio::zero(),
-                    abs: typst::layout::Length {
-                        abs: Abs::zero(),
-                        em: Em::new(0.5),
-                    },
-                })),
-            },
-            two_sided: None,
-        })
-        .wrap(),
+        // PageElem::set_width(Smart::Auto).wrap(),
+        // PageElem::set_height(Smart::Auto).wrap(),
+        // PageElem::set_margin(Margin::splat(Some(Smart::Custom(Rel::zero())))).wrap(),
+        // PageElem::set_margin(Margin {
+        //     sides: Sides {
+        //         left: Some(Smart::Custom(Rel::zero())),
+        //         right: Some(Smart::Custom(Rel::zero())),
+        //         top: Some(Smart::Custom(Rel {
+        //             rel: Ratio::zero(),
+        //             abs: typst::layout::Length {
+        //                 abs: Abs::zero(),
+        //                 em: Em::new(0.5),
+        //             },
+        //         })),
+        //         bottom: Some(Smart::Custom(Rel {
+        //             rel: Ratio::zero(),
+        //             abs: typst::layout::Length {
+        //                 abs: Abs::zero(),
+        //                 em: Em::new(0.5),
+        //             },
+        //         })),
+        //     },
+        //     two_sided: None,
+        // })
+        // .wrap(),
     ];
     let sc = sc.chain(styles);
     inner_content.materialize(sc);
@@ -291,7 +284,8 @@ fn into_latex(
 
             let filename = compile_subcontent(content.pack(), sc, engine)?;
 
-            if let Some(Some(Supplement::Content(c))) = figure_elem.supplement(sc).clone().custom()
+            if let Some(Some(Supplement::Content(c))) =
+                figure_elem.supplement.get_ref(sc).clone().custom()
             {
                 if c.plain_text() == "wild" {
                     if let Some(label) = label_text {
@@ -303,7 +297,8 @@ fn into_latex(
                 }
             }
             let caption = figure_elem
-                .caption(sc)
+                .caption
+                .get_ref(sc)
                 .as_ref()
                 .map(|cap| into_latex(cap.body.clone(), wild_figures, config, sc, world, engine))
                 .transpose()?
@@ -337,8 +332,8 @@ fn into_latex(
             }
         }
         elems::Elem::HeadingElem(heading_elem) => {
-            let level = heading_elem.offset(sc);
-            let depth = heading_elem.depth(sc);
+            let level = heading_elem.offset.get_ref(sc);
+            let depth = heading_elem.depth.get_ref(sc);
 
             let h = match depth.get() + level {
                 1 => "section",
@@ -398,7 +393,7 @@ fn into_latex(
             TexBlock::Nothing
         }
         elems::Elem::RawElem(raw_elem) => {
-            if raw_elem.lang(sc).as_ref().map(|s| s.as_str()) == Some("latexraw") {
+            if raw_elem.lang.get_ref(sc).as_ref().map(|s| s.as_str()) == Some("latexraw") {
                 let raw_content = match raw_elem.text {
                     RawContent::Text(s) => s.to_string(),
                     RawContent::Lines(eco_vec) => {
@@ -418,7 +413,7 @@ fn into_latex(
         }
         elems::Elem::SmartQuoteElem(elem) => {
             println!("Note: SmartQuoteElem is replaced with ('\"'), you may have to edit this manually for best looks");
-            if elem.double(sc) {
+            if *elem.double.get_ref(sc) {
                 TexBlock::RawString("\"".to_string())
             } else {
                 TexBlock::RawString("\'".to_string())
@@ -468,7 +463,7 @@ fn into_latex(
 
 fn main() -> Result<()> {
     // Parse command line arguments
-    let mut args = CompileArgs::parse();
+    let args = CompileArgs::parse();
 
     let config_content =
         std::fs::read_to_string("ttt.toml").context(format!("Failed to read ttt.toml"))?;
@@ -482,18 +477,23 @@ fn main() -> Result<()> {
     let template = std::fs::read_to_string(&config.template)
         .with_context(|| format!("Failed to read template from {}", config.template))?;
 
+    let main_source = std::fs::read_to_string(&args.input)
+        .with_context(|| format!("Failed to read {}", args.input))?;
+
     let world = TypstWrapperWorld::new(
         current_dir()
             .with_context(|| "Failed to get current dir")?
             .to_str()
             .ok_or_else(|| anyhow!("Current dir was not a unicode path"))?
             .to_string(),
-        args.input.clone().into_string(),
+        main_source,
     );
+
+    println!("Going to eval typst");
 
     let content = eval_typst(&world)?;
 
-    let library = Library::builder().build();
+    let library = world.library();
     let sc = StyleChain::new(&library.styles);
 
     let empty_introspector = Introspector::default();
@@ -526,10 +526,7 @@ fn main() -> Result<()> {
             )
         });
 
-    let filename = format!(
-        "{}.tex",
-        args.input
-    );
+    let filename = format!("{}.tex", args.input);
     std::fs::write(filename, latex_source.to_string())
         .with_context(|| "Failed to write out/out.tex")?;
 

@@ -5,12 +5,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use typst::diag::{eco_format, FileError, FileResult, PackageError, PackageResult};
-use typst::foundations::{Bytes, Datetime};
+use typst::foundations::{Bytes, Datetime, Dict, IntoValue, Value};
 use typst::syntax::package::PackageSpec;
 use typst::syntax::{FileId, Source};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
-use typst::Library;
+use typst::{Library, LibraryExt};
 use typst_kit::fonts::{FontSearcher, FontSlot};
 
 /// Main interface that determines the environment for Typst.
@@ -48,8 +48,11 @@ impl TypstWrapperWorld {
         let root = PathBuf::from(root);
         let fonts = FontSearcher::new().include_system_fonts(true).search();
 
+        let mut inputs = Dict::new();
+        inputs.insert("is_ttt".into(), "yes".into_value());
+        let library = Library::builder().with_inputs(inputs).build();
         Self {
-            library: LazyHash::new(Library::default()),
+            library: LazyHash::new(library),
             book: LazyHash::new(fonts.book),
             root,
             fonts: fonts.fonts,
