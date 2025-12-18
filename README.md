@@ -46,11 +46,76 @@ ttt your_file.typ
 ```
 which will create `generated` containing the PDFs that will be included, and `your_file.typ.tex` which is the output latex file.
 
+### Sub Figures With Wild Figures
+
+TTT handles figures by mapping them to latex figures, but figures containing sub-figures
+cannot be handled automatically. Instead, `ttt` supports "wild figures" in which the figure
+content is generated but not inserted anywhere in the document. Instead, you can use
+raw latex to place the content where you want it. For example:
+
+```typst
+#let mem_command_def = (
+  content: [
+   ...
+  ],
+  caption: []
+)
+#figure(kind: "wild", supplement: "wild", mem_command_def.content) <mem_command_def>
+
+#if not is_ttt {
+  // Your normal typst layout goes here
+} else {
+  #raw_latex("
+    \\begin{figure}[t]
+      \\begin{minipage}{0.33\\textwidth}
+        \\subcaptionbox{\\label{lst:surfer:mem_command_def}}{\\includegraphics[]{../#wild:mem_command_def#}}
+      \\end{minipage}
+      ...
+    \\end{figure}
+  ")
+}
+```
+
+### TTT Specific Customization
+
+Some small changes are sometimes required between standard typst compilation and `ttt`. You can
+detect if the document is being compiled with `ttt` with
+```typst
+#let is_ttt = sys.inputs.at("is_ttt", default: false) != false;
+```
+
+#### TTT specific imports and show rules
+
+You can have typst specific imports and show rules like this
+
+```typ
+#let show_rules = if is_ttt {
+  it => {
+    show: it => highlights(ignore_fill_width: true, use_light_theme: true, it)
+    it
+  }
+} else {
+  it => it
+}
+#show: show_rules
+
+#let imports = if is_ttt {
+  import "latex-overrides.typ"
+  latex-overrides
+} else {
+  int
+}
+#import imports : *
+```
+
+imports specifically are very useful for overriding the behaviour of typst functions
+that rely on state but which can be implemented in latex.
+
+
 ## Limitations
 
 Currently, the system supports what I've needed for my papers, most other things are relatively easy to add support for, it just needs someone to do it. There are some exceptions however:
 
 - Typst infers supplements for things like figures, while latex does not. I.e. you can write `@fig1` in typst but need to write `Figure~\ref{fig1}` in latex. I have not found a way to infer the supplement, so for now, you have to prefix your references with `fig:`, `tab:` and `lst:`. With no prefix, it is assumed that the reference is a citation
-- Anything using `state` in typst will be very difficult to support.
-Currently, the compiler uses the typst frontend but does not do layout, state
-is resolved during layout which means this technique does not work.
+- Anything using `state` in typst will be very difficult to support. Currently, the compiler uses the typst frontend but does not do layout, state is resolved during layout which means this technique does not work.
+

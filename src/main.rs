@@ -49,6 +49,12 @@ pub struct Config {
 
     #[facet(default = "[t]")]
     figure_placement: String,
+
+    /// The wrapper to use around inline typst content to make it look inlines.
+    /// This seems to need tweaking on a per-template basis but the default here
+    /// can serve as a starting point
+    #[facet(default = "\\raisebox{-0.5em}[1em]")]
+    inline_wrapper: String,
 }
 
 /// Common arguments of compile, watch, and query.
@@ -100,6 +106,8 @@ fn compile_subcontent(
 ) -> Result<Utf8PathBuf> {
     let filename = format!("{}.pdf", random::<u64>());
     let output_file = Utf8PathBuf::from("generated").join(filename);
+
+    println!("Compiling {inner_content:?}");
 
     let styles = &[
         PageElem::set_width(Smart::Auto).wrap(),
@@ -210,10 +218,12 @@ impl TexBlock {
                 )
             }
             TexBlock::Math(pdf) => {
-                format!(r#"\raisebox{{-0.5em}}[1em]{{\includegraphics{{{pdf}}}}}"#)
+                let inline_wrapper = &config.inline_wrapper;
+                format!(r#"{inline_wrapper}{{\includegraphics{{{pdf}}}}}"#)
             }
             TexBlock::InlineCode(pdf) => {
-                format!(r#"\raisebox{{-0.5em}}[1em]{{\includegraphics{{{pdf}}}}}"#)
+                let inline_wrapper = &config.inline_wrapper;
+                format!(r#"{inline_wrapper}{{\includegraphics{{{pdf}}}}}"#)
             }
             TexBlock::Ref(l) => {
                 let sup = match label_to_supplement(l) {
@@ -454,7 +464,9 @@ sc,
 
 fn main() -> Result<()> {
     // Parse command line arguments
-    let args = CompileArgs::parse();
+    let mut args = CompileArgs::parse();
+
+    args.compile.inputs.push(("is_ttt".to_string(), "true".to_string()));
 
     let config_content =
         std::fs::read_to_string("ttt.toml").context(format!("Failed to read ttt.toml"))?;
