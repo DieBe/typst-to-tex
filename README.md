@@ -111,6 +111,50 @@ You can have typst specific imports and show rules like this
 imports specifically are very useful for overriding the behaviour of typst functions
 that rely on state but which can be implemented in latex.
 
+## Context
+
+While full `context` translation is unlikely to ever work with this, it is still sometimes
+useful to have references in the document. To support this, `ttt` supports a `typst eval` based
+approach.
+
+This system is based on three parts. First
+```typst
+#let result = state("ttt_eval", (:))
+
+#let add(key, value) = {
+  result.update(s => {
+    s.insert(key, value)
+    s
+  })
+}
+
+#let emit = context {[#metadata(result.final()) <ttt-state>]}
+```
+which I will put on typst universe eventually, but for now, just put it in your project.
+
+In non-ttt mode (see above), use the `add` function to add any values you want to render in the final document. In `ttt` mode, emit a `ttt-state` raw block, containing the key that you added with `add`. Finally, put the `emit` part somewhere in your document where it will be rendered.
+
+For example, here is how line number references can be implemented
+
+```typst
+#let lookup_line(name) = {
+  let key = "lookup_line(" + name + ")"
+  if is_ttt {
+    raw(lang: "ttt-eval", key)
+  } else {
+    context {
+      let number = line_numbers.final().at(name, default: none)
+
+      ttt-eval.add(key, str(number))
+
+      if number == none {
+        panic(name + " not found in dict. Current dict: ", line_numbers.get())
+      }
+      [#number]
+    }
+  }
+}
+```
 
 ## Limitations
 
