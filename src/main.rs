@@ -39,6 +39,36 @@ use typst_pdf::PdfOptions;
 use crate::diagnostics::Diagnostics;
 use crate::world::TypstWrapperWorld;
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum MinorIssueKind {
+    SingleSmartQuote,
+}
+
+enum SmartQuoteState {
+    Open,
+    Closed,
+}
+
+struct Context<'a> {
+    /// A collection of figures with the "wild" supplement which can be
+    /// substituted in raw latex blocks, indexed by the label attached to
+    /// them.
+    wild_figures: &'a mut HashMap<String, Utf8PathBuf>,
+    config: &'a Config,
+    diags: &'a mut Diagnostics,
+    engine: &'a mut Engine<'a>,
+
+    /// Tracks the state of " smart quotes to emit the appropriate latex quotes.
+    /// ' must still be handled manually for now since they can also appear in
+    /// posessives
+    last_smart_quote: SmartQuoteState,
+
+    /// These are issues that could in theory lead to a non-ideal result but which
+    /// we don't want to warn for in the common case. Instead, we'll just report
+    /// a summary of these at the end of the compilation process
+    minor_issues: HashMap<MinorIssueKind, Vec<SourceDiagnostic>>,
+}
+
 #[derive(Facet)]
 pub struct Config {
     template: Utf8PathBuf,
@@ -57,6 +87,11 @@ pub struct Config {
 #[derive(Debug, Clone, Parser, Default)]
 pub struct CompileArgs {
     pub input: Utf8PathBuf,
+
+    /// Report all minor issues with full diagnostics instead of just a summary at the
+    /// end
+    #[clap(long = "minor")]
+    pub w_minor: bool,
 }
 
 fn eval_typst(world: &dyn World, diags: &mut Diagnostics) -> Result<Content> {
@@ -250,21 +285,7 @@ impl TexBlock {
     }
 }
 
-struct Context<'a> {
-    /// A collection of figures with the "wild" supplement which can be
-    /// substituted in raw latex blocks, indexed by the label attached to
-    /// them.
-    wild_figures: &'a mut HashMap<String, Utf8PathBuf>,
-    config: &'a Config,
-    diags: &'a mut Diagnostics,
-    engine: &'a mut Engine<'a>,
-}
-
-fn into_latex(
-    mut content: Content,
-    sc: StyleChain,
-    ctx: &mut Context,
-) -> Result<TexBlock> {
+fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result<TexBlock> {
     content.materialize(sc);
 
     let label_text = content.label().map(|l| l.resolve().to_string());
@@ -279,21 +300,11 @@ fn into_latex(
         }
         elems::Elem::EmphElem(emph_elem) => TexBlock::String(format!(
             "\\textit{{{}}}",
-            into_latex(
-                emph_elem.body,
-                sc,
-                ctx,
-            )?
-            .emit(ctx.wild_figures, ctx.config)
+            into_latex(emph_elem.body, sc, ctx,)?.emit(ctx.wild_figures, ctx.config)
         )),
         elems::Elem::StrongElem(strong_elem) => TexBlock::String(format!(
             "\\textbf{{{}}}",
-            into_latex(
-                strong_elem.body,
-                sc,
-                ctx,
-            )?
-            .emit(ctx.wild_figures, ctx.config)
+            into_latex(strong_elem.body, sc, ctx,)?.emit(ctx.wild_figures, ctx.config)
         )),
         elems::Elem::EnumElem(_enum_elem) => {
             println!("Unsupported EnumElem");
@@ -320,13 +331,7 @@ fn into_latex(
                 .caption
                 .get_ref(sc)
                 .as_ref()
-                .map(|cap| {
-                    into_latex(
-                        cap.body.clone(),
-                        sc,
-                        ctx,
-                    )
-                })
+                .map(|cap| into_latex(cap.body.clone(), sc, ctx))
                 .transpose()?
                 .map(|cap| TexBlock::Seq(vec![cap, label]))
                 .map(Box::new);
@@ -344,11 +349,7 @@ fn into_latex(
         }
         elems::Elem::FootnoteElem(f) => {
             if let Some(body) = f.body_content() {
-                TexBlock::Footnote(Box::new(into_latex(
-                    body.clone(),
-                    sc,
-                    ctx
-                )?))
+                TexBlock::Footnote(Box::new(into_latex(body.clone(), sc, ctx)?))
             } else {
                 println!("Empty footnote???");
                 TexBlock::Nothing
@@ -370,12 +371,7 @@ fn into_latex(
 
             let heading = TexBlock::String(format!(
                 "\\{h}{{{}}}",
-                into_latex(
-                    heading_elem.body,
-                    sc,
-                    ctx
-                )?
-                .emit(ctx.wild_figures, ctx.config)
+                into_latex(heading_elem.body, sc, ctx)?.emit(ctx.wild_figures, ctx.config)
             ));
 
             TexBlock::Seq(vec![heading, label])
@@ -397,11 +393,7 @@ fn into_latex(
             println!("Unsupported ListElem");
             TexBlock::Nothing
         }
-        elems::Elem::ParElem(par_elem) => into_latex(
-            par_elem.body,
-            sc,
-            ctx,
-        )?,
+        elems::Elem::ParElem(par_elem) => into_latex(par_elem.body, sc, ctx)?,
         elems::Elem::ParLineMarker(_) => TexBlock::Nothing,
         elems::Elem::ParbreakElem(_) => TexBlock::String("\n\n".to_string()),
         elems::Elem::QuoteElem(_quote_elem) => {
@@ -441,10 +433,24 @@ fn into_latex(
             TexBlock::Nothing
         }
         elems::Elem::SmartQuoteElem(elem) => {
-            println!("Note: SmartQuoteElem is replaced with ('\"'), you may have to edit this manually for best looks");
             if *elem.double.get_ref(sc) {
-                TexBlock::RawString("\"".to_string())
+                let (result, state) = match ctx.last_smart_quote {
+                    SmartQuoteState::Open => ("''", SmartQuoteState::Closed),
+                    SmartQuoteState::Closed => ("``", SmartQuoteState::Open),
+                };
+                ctx.last_smart_quote = state;
+                TexBlock::RawString(result.to_string())
             } else {
+                let diag = SourceDiagnostic::warning(
+                    content.span(),
+                    "Unhandled smart quote `'`, emitting '.",
+                )
+                .with_hint("You may want to edit this manually afterwards");
+
+                ctx.minor_issues
+                    .entry(MinorIssueKind::SingleSmartQuote)
+                    .or_insert(vec![])
+                    .push(diag);
                 TexBlock::RawString("\'".to_string())
             }
         }
@@ -473,26 +479,19 @@ fn into_latex(
         elems::Elem::SequenceElem(s) => TexBlock::Seq(
             s.children
                 .iter()
-                .map(|content| {
-                    into_latex(
-                        content.clone(),
-                        sc,
-                        ctx,
-                    )
-                })
+                .map(|content| into_latex(content.clone(), sc, ctx))
                 .collect::<Result<_>>()?,
         ),
         elems::Elem::StyledElem(styled_elem) => {
             let sc = sc.chain(styled_elem.styles.as_slice());
-            into_latex(
-                styled_elem.child,
-                sc,
-                ctx,
-            )?
+            into_latex(styled_elem.child, sc, ctx)?
         }
         elems::Elem::SymbolElem(_symbol_elem) => TexBlock::Nothing,
         elems::Elem::BoxElem(_) => {
-            ctx.diags.push(SourceDiagnostic::warning(content.span(), "Unsupported box element"));
+            ctx.diags.push(SourceDiagnostic::warning(
+                content.span(),
+                "Unsupported box element",
+            ));
             TexBlock::Nothing
         }
         elems::Elem::Ignored => TexBlock::Nothing,
@@ -529,40 +528,38 @@ fn main() -> Result<()> {
         main_source,
     );
 
+    let empty_introspector = Introspector::default();
+    let traced = Traced::new(Span::detached());
+    let mut sink = Sink::new();
+    let mut engine = Engine {
+        routines: &ROUTINES,
+        world: (&world as &dyn World).track(),
+        introspector: empty_introspector.track(),
+        traced: traced.track(),
+        sink: sink.track_mut(),
+        route: Route::default(),
+    };
     let mut diagnostics = Diagnostics::new();
+    let mut wild_figures = HashMap::new();
+    let ctx = &mut Context {
+        wild_figures: &mut wild_figures,
+        config: &config,
+        diags: &mut diagnostics,
+        engine: &mut engine,
+        last_smart_quote: SmartQuoteState::Closed,
+        minor_issues: HashMap::new(),
+    };
 
     let result = (|| {
-        let content = eval_typst(&world, &mut diagnostics)?;
+        let content = eval_typst(&world, ctx.diags)?;
 
         let library = world.library();
 
         let sc = StyleChain::new(&library.styles);
 
-        let empty_introspector = Introspector::default();
-        let traced = Traced::new(Span::detached());
-        let mut sink = Sink::new();
-        let mut engine = Engine {
-            routines: &ROUTINES,
-            world: (&world as &dyn World).track(),
-            introspector: empty_introspector.track(),
-            traced: traced.track(),
-            sink: sink.track_mut(),
-            route: Route::default(),
-        };
+        let latex = into_latex(content, sc, ctx)?;
 
-        let mut wild_figures = HashMap::new();
-        let latex = into_latex(
-            content,
-            sc,
-            &mut Context {
-                wild_figures: &mut wild_figures,
-                config: &config,
-                diags: &mut diagnostics,
-                engine: &mut engine,
-            }
-        )?;
-
-        let latex_source = template.replace("%CONTENT%", &latex.emit(&wild_figures, &config));
+        let latex_source = template.replace("%CONTENT%", &latex.emit(&ctx.wild_figures, &config));
 
         // Citation groups are easier to fix with regex than to look for them in the source
         let cite_fix_regex = Regex::new(r"(\s+~\\cite\{([^}]*)\})+").unwrap();
@@ -584,7 +581,32 @@ fn main() -> Result<()> {
         Ok(())
     })();
 
-    diagnostics.report(&world)?;
+    for (_issue, diags) in &ctx.minor_issues {
+        if args.w_minor {
+            for diag in diags {
+                ctx.diags.push(diag.clone());
+            }
+            ctx.diags.report(&world)?;
+        }
+    }
+
+    ctx.diags.report(&world)?;
+
+
+    if !args.w_minor {
+        if !ctx.minor_issues.is_empty() {
+            eprintln!("There were a few minor issues:");
+            eprintln!("These are probably fine, but we report them just in case. Rerun with `--minor` to see their full diagnostics");
+        }
+        for (issue, diags) in &ctx.minor_issues {
+            match issue {
+                MinorIssueKind::SingleSmartQuote => {
+                    eprintln!("    Smart single quote: {}", diags.len())
+                }
+            }
+        }
+    }
+
 
     result
 }
