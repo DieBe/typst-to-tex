@@ -15,8 +15,9 @@ use itertools::Itertools;
 use rand::random;
 use regex::Regex;
 
-use color_eyre::{eyre::Context, Result};
+use color_eyre::{eyre::Context as _, Result};
 use typst::comemo::Track;
+use typst::diag::SourceDiagnostic;
 use typst::engine::Engine;
 use typst::engine::Route;
 use typst::engine::Sink;
@@ -108,8 +109,6 @@ fn compile_subcontent(
 ) -> Result<Utf8PathBuf> {
     let filename = format!("{}.pdf", random::<u64>());
     let output_file = Utf8PathBuf::from("generated").join(filename);
-
-    println!("Compiling {inner_content:?}");
 
     let styles = &[
         // PageElem::set_width(Smart::Auto).wrap(),
@@ -251,16 +250,20 @@ impl TexBlock {
     }
 }
 
+struct Context<'a> {
+    /// A collection of figures with the "wild" supplement which can be
+    /// substituted in raw latex blocks, indexed by the label attached to
+    /// them.
+    wild_figures: &'a mut HashMap<String, Utf8PathBuf>,
+    config: &'a Config,
+    diags: &'a mut Diagnostics,
+    engine: &'a mut Engine<'a>,
+}
+
 fn into_latex(
     mut content: Content,
-    // A collection of figures with the "wild" supplement which can be
-    // substituted in raw latex blocks, indexed by the // label attached to
-    // them.
-    wild_figures: &mut HashMap<String, Utf8PathBuf>,
-    config: &Config,
     sc: StyleChain,
-    world: &dyn World,
-    engine: &mut Engine,
+    ctx: &mut Context,
 ) -> Result<TexBlock> {
     content.materialize(sc);
 
@@ -276,13 +279,21 @@ fn into_latex(
         }
         elems::Elem::EmphElem(emph_elem) => TexBlock::String(format!(
             "\\textit{{{}}}",
-            into_latex(emph_elem.body, wild_figures, config, sc, world, engine)?
-                .emit(wild_figures, config)
+            into_latex(
+                emph_elem.body,
+                sc,
+                ctx,
+            )?
+            .emit(ctx.wild_figures, ctx.config)
         )),
         elems::Elem::StrongElem(strong_elem) => TexBlock::String(format!(
             "\\textbf{{{}}}",
-            into_latex(strong_elem.body, wild_figures, config, sc, world, engine)?
-                .emit(wild_figures, config)
+            into_latex(
+                strong_elem.body,
+                sc,
+                ctx,
+            )?
+            .emit(ctx.wild_figures, ctx.config)
         )),
         elems::Elem::EnumElem(_enum_elem) => {
             println!("Unsupported EnumElem");
@@ -291,14 +302,14 @@ fn into_latex(
         elems::Elem::FigureElem(figure_elem) => {
             let content = FigureElem::new(figure_elem.body.clone());
 
-            let filename = compile_subcontent(content.pack(), sc, engine)?;
+            let filename = compile_subcontent(content.pack(), sc, ctx.engine)?;
 
             if let Some(Some(Supplement::Content(c))) =
                 figure_elem.supplement.get_ref(sc).clone().custom()
             {
                 if c.plain_text() == "wild" {
                     if let Some(label) = label_text {
-                        wild_figures.insert(label, filename);
+                        ctx.wild_figures.insert(label, filename);
                         return Ok(TexBlock::Nothing);
                     } else {
                         panic!("Found a wild supplement figure that did not have a label attached")
@@ -309,7 +320,13 @@ fn into_latex(
                 .caption
                 .get_ref(sc)
                 .as_ref()
-                .map(|cap| into_latex(cap.body.clone(), wild_figures, config, sc, world, engine))
+                .map(|cap| {
+                    into_latex(
+                        cap.body.clone(),
+                        sc,
+                        ctx,
+                    )
+                })
                 .transpose()?
                 .map(|cap| TexBlock::Seq(vec![cap, label]))
                 .map(Box::new);
@@ -321,7 +338,7 @@ fn into_latex(
             }
         }
         elems::Elem::EquationElem(eq) => {
-            let filename = compile_subcontent(eq.pack(), sc, engine)?;
+            let filename = compile_subcontent(eq.pack(), sc, ctx.engine)?;
 
             TexBlock::Math(filename)
         }
@@ -329,11 +346,8 @@ fn into_latex(
             if let Some(body) = f.body_content() {
                 TexBlock::Footnote(Box::new(into_latex(
                     body.clone(),
-                    wild_figures,
-                    config,
                     sc,
-                    world,
-                    engine,
+                    ctx
                 )?))
             } else {
                 println!("Empty footnote???");
@@ -356,8 +370,12 @@ fn into_latex(
 
             let heading = TexBlock::String(format!(
                 "\\{h}{{{}}}",
-                into_latex(heading_elem.body, wild_figures, config, sc, world, engine)?
-                    .emit(wild_figures, config)
+                into_latex(
+                    heading_elem.body,
+                    sc,
+                    ctx
+                )?
+                .emit(ctx.wild_figures, ctx.config)
             ));
 
             TexBlock::Seq(vec![heading, label])
@@ -379,9 +397,11 @@ fn into_latex(
             println!("Unsupported ListElem");
             TexBlock::Nothing
         }
-        elems::Elem::ParElem(par_elem) => {
-            into_latex(par_elem.body, wild_figures, config, sc, world, engine)?
-        }
+        elems::Elem::ParElem(par_elem) => into_latex(
+            par_elem.body,
+            sc,
+            ctx,
+        )?,
         elems::Elem::ParLineMarker(_) => TexBlock::Nothing,
         elems::Elem::ParbreakElem(_) => TexBlock::String("\n\n".to_string()),
         elems::Elem::QuoteElem(_quote_elem) => {
@@ -411,7 +431,7 @@ fn into_latex(
                 };
                 TexBlock::RawString(raw_content)
             } else {
-                let filename = compile_subcontent(raw_elem.pack(), sc, engine)?;
+                let filename = compile_subcontent(raw_elem.pack(), sc, ctx.engine)?;
 
                 TexBlock::InlineCode(filename)
             }
@@ -453,16 +473,26 @@ fn into_latex(
         elems::Elem::SequenceElem(s) => TexBlock::Seq(
             s.children
                 .iter()
-                .map(|content| into_latex(content.clone(), wild_figures, config, sc, world, engine))
+                .map(|content| {
+                    into_latex(
+                        content.clone(),
+                        sc,
+                        ctx,
+                    )
+                })
                 .collect::<Result<_>>()?,
         ),
         elems::Elem::StyledElem(styled_elem) => {
             let sc = sc.chain(styled_elem.styles.as_slice());
-            into_latex(styled_elem.child, wild_figures, config, sc, world, engine)?
+            into_latex(
+                styled_elem.child,
+                sc,
+                ctx,
+            )?
         }
         elems::Elem::SymbolElem(_symbol_elem) => TexBlock::Nothing,
-        elems::Elem::BoxElem(box_elem) => {
-            println!("unsupported box elem {box_elem:?}");
+        elems::Elem::BoxElem(_) => {
+            ctx.diags.push(SourceDiagnostic::warning(content.span(), "Unsupported box element"));
             TexBlock::Nothing
         }
         elems::Elem::Ignored => TexBlock::Nothing,
@@ -521,7 +551,16 @@ fn main() -> Result<()> {
         };
 
         let mut wild_figures = HashMap::new();
-        let latex = into_latex(content, &mut wild_figures, &config, sc, &world, &mut engine)?;
+        let latex = into_latex(
+            content,
+            sc,
+            &mut Context {
+                wild_figures: &mut wild_figures,
+                config: &config,
+                diags: &mut diagnostics,
+                engine: &mut engine,
+            }
+        )?;
 
         let latex_source = template.replace("%CONTENT%", &latex.emit(&wild_figures, &config));
 

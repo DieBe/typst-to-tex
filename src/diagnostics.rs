@@ -1,4 +1,4 @@
-use codespan_reporting::{diagnostic::Diagnostic, files::Error, term::{termcolor::StandardStream, Config}};
+use codespan_reporting::{diagnostic::Diagnostic, files::Error, term::{termcolor::StandardStream}};
 use color_eyre::{eyre::anyhow, Result};
 use typst::{diag::SourceDiagnostic, syntax::FileId, World, WorldExt};
 
