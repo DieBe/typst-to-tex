@@ -42,6 +42,7 @@ use crate::world::TypstWrapperWorld;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum MinorIssueKind {
     SingleSmartQuote,
+    IgnoredElem,
 }
 
 enum SmartQuoteState {
@@ -292,10 +293,16 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
     let label = TexBlock::Maybe(label_text.clone().map(TexBlock::Label).map(Box::new));
     let native = from_native(content.clone());
 
+    macro_rules! message_here{
+        ($message:expr) => {
+            ctx.diags.push(SourceDiagnostic::warning(content.span(), $message))
+        }
+    }
+
     let result = match native {
         elems::Elem::HideElem(_) => TexBlock::Nothing,
         elems::Elem::CiteElem(_) | elems::Elem::CiteGroup(_) => {
-            println!("Unsupported CiteElem");
+            message_here!("Unsupported CiteElem");
             TexBlock::Nothing
         }
         elems::Elem::EmphElem(emph_elem) => TexBlock::String(format!(
@@ -307,7 +314,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             into_latex(strong_elem.body, sc, ctx,)?.emit(ctx.wild_figures, ctx.config)
         )),
         elems::Elem::EnumElem(_enum_elem) => {
-            println!("Unsupported EnumElem");
+            message_here!("Unsupported EnumElem");
             TexBlock::Nothing
         }
         elems::Elem::FigureElem(figure_elem) => {
@@ -351,7 +358,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             if let Some(body) = f.body_content() {
                 TexBlock::Footnote(Box::new(into_latex(body.clone(), sc, ctx)?))
             } else {
-                println!("Empty footnote???");
+                message_here!("Found an empty footnote, ignoring");
                 TexBlock::Nothing
             }
         }
@@ -364,7 +371,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                 2 => "subsection",
                 3 => "subsubsection",
                 _ => {
-                    println!("More than 3 levels of sections is unsupported. Using subsection");
+                    message_here!("More than 3 levels of sections is unsupported. Falling back on subsection");
                     "subsubsection"
                 }
             };
@@ -381,36 +388,36 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                 TexBlock::String(format!("\\url{{{}}}", url.as_str()))
             }
             typst::model::LinkTarget::Dest(_) => {
-                println!("Ignoring link with non-url destination");
+                message_here!("Ignoring link with non-url destination");
                 TexBlock::Nothing
             }
             typst::model::LinkTarget::Label(_label) => {
-                println!("Ignoring link target label");
+                message_here!("Ignoring link target label");
                 TexBlock::Nothing
             }
         },
         elems::Elem::ListElem(_list_elem) => {
-            println!("Unsupported ListElem");
+            message_here!("Unsupported ListElem");
             TexBlock::Nothing
         }
         elems::Elem::ParElem(par_elem) => into_latex(par_elem.body, sc, ctx)?,
         elems::Elem::ParLineMarker(_) => TexBlock::Nothing,
         elems::Elem::ParbreakElem(_) => TexBlock::String("\n\n".to_string()),
         elems::Elem::QuoteElem(_quote_elem) => {
-            println!("Unsupported QuoteElem");
+            message_here!("Unsupported QuoteElem");
             TexBlock::Nothing
         }
         elems::Elem::RefElem(ref_elem) => TexBlock::Ref(ref_elem.target.resolve().to_string()),
         elems::Elem::HighlightElem(_highlight_elem) => {
-            println!("Unsupported HighlightElem");
+            message_here!("Unsupported HighlightElem");
             TexBlock::Nothing
         }
         elems::Elem::LinebreakElem(_linebreak_elem) => {
-            println!("Unsupported LinebreakElem");
+            message_here!("Unsupported LinebreakElem");
             TexBlock::Nothing
         }
         elems::Elem::TableElem(_table_elem) => {
-            println!("Unsupported TableElem");
+            message_here!("Unsupported TableElem");
             TexBlock::Nothing
         }
         elems::Elem::RawElem(raw_elem) => {
@@ -429,7 +436,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             }
         }
         elems::Elem::SmallcapsElem(_smallcaps_elem) => {
-            println!("Unsupported SmallcapsElem");
+            message_here!("Unsupported SmallcapsElem");
             TexBlock::Nothing
         }
         elems::Elem::SmartQuoteElem(elem) => {
@@ -456,24 +463,27 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
         }
         elems::Elem::SpaceElem(_) => TexBlock::String(" ".to_string()),
         elems::Elem::StrikeElem(_strike_elem) => {
-            println!("Unsupported StrikeElem");
+            message_here!("Unsupported StrikeElem");
             TexBlock::Nothing
         }
         elems::Elem::SubElem(_sub_elem) => {
-            println!("Unsupported SubElem");
+            message_here!("Unsupported SubElem");
             TexBlock::Nothing
         }
         elems::Elem::SuperElem(_super_elem) => {
-            println!("Unsupported SuperElem");
+            message_here!("Unsupported SuperElem");
             TexBlock::Nothing
         }
         elems::Elem::TextElem(text) => TexBlock::String(text.text.to_string()),
         elems::Elem::UnderlineElem(_underline_elem) => {
-            println!("Unsupported UnderlineElem");
+            message_here!("Unsupported UnderlineElem");
             TexBlock::Nothing
         }
         elems::Elem::ContextElem(_context_elem) => {
-            println!("Context is not supported. Consider using #emit-latex");
+            ctx.diags.push(SourceDiagnostic::warning(
+                content.span(),
+                "Context is not supported. Consider using #emit-latex",
+            ));
             TexBlock::Nothing
         }
         elems::Elem::SequenceElem(s) => TexBlock::Seq(
@@ -494,7 +504,19 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             ));
             TexBlock::Nothing
         }
-        elems::Elem::Ignored => TexBlock::Nothing,
+        elems::Elem::Ignored => {
+            let diag = SourceDiagnostic::warning(
+                content.span(),
+                "Encountered a fully ignored element.",
+            );
+
+            ctx.minor_issues
+                .entry(MinorIssueKind::IgnoredElem)
+                .or_insert(vec![])
+                .push(diag);
+
+            TexBlock::Nothing
+        },
     };
     Ok(result)
 }
@@ -592,7 +614,6 @@ fn main() -> Result<()> {
 
     ctx.diags.report(&world)?;
 
-
     if !args.w_minor {
         if !ctx.minor_issues.is_empty() {
             eprintln!("There were a few minor issues:");
@@ -602,11 +623,13 @@ fn main() -> Result<()> {
             match issue {
                 MinorIssueKind::SingleSmartQuote => {
                     eprintln!("    Smart single quote: {}", diags.len())
+                },
+                MinorIssueKind::IgnoredElem => {
+                    eprintln!("    Ignored element:    {}", diags.len())
                 }
             }
         }
     }
-
 
     result
 }
