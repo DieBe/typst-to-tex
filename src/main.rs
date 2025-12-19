@@ -1,5 +1,6 @@
 mod diagnostics;
 mod elems;
+mod eval;
 mod world;
 
 use std::collections::HashMap;
@@ -77,11 +78,33 @@ struct Context<'a> {
     /// we don't want to warn for in the common case. Instead, we'll just report
     /// a summary of these at the end of the compilation process
     minor_issues: HashMap<MinorIssueKind, Vec<SourceDiagnostic>>,
+
+    input: &'a Utf8PathBuf,
+
+    eval_result: Option<HashMap<String, String>>,
 }
 
 #[derive(Facet)]
 pub struct Config {
+    /// The main file containing the typst content you want to transpile to latex.
+    /// If you are using a template with lots of styling, you probably don't want this
+    /// to be your main file.
+    ///
+    /// For example, you probably want to make your main file be
+    /// ```typst
+    /// #show: acmart.with(
+    ///     ...
+    /// )
+    /// #include "content.typ"
+    /// ```
+    /// where `content.typ` contains your actual document text.
+    content_main: Utf8PathBuf,
     template: Utf8PathBuf,
+
+    /// If you use the `ttt-eval` system for stateful queries, this is the file to use
+    /// as the main file for evals. Generally you want this to be your project main file,
+    /// not your content main
+    eval_main: Option<Utf8PathBuf>,
 
     #[facet(default = "[t]")]
     figure_placement: String,
@@ -96,8 +119,6 @@ pub struct Config {
 /// Common arguments of compile, watch, and query.
 #[derive(Debug, Clone, Parser, Default)]
 pub struct CompileArgs {
-    pub input: Utf8PathBuf,
-
     /// Report all minor issues with full diagnostics instead of just a summary at the
     /// end
     #[clap(long = "minor")]
@@ -158,27 +179,30 @@ fn compile_subcontent(
     let mut styles = Styles::new();
     styles.set(PageElem::width, Smart::Auto);
     styles.set(PageElem::height, Smart::Auto);
-    styles.set(PageElem::margin, Margin {
-        sides: Sides {
-            left: Some(Smart::Custom(Rel::zero())),
-            right: Some(Smart::Custom(Rel::zero())),
-            top: Some(Smart::Custom(Rel {
-                rel: Ratio::zero(),
-                abs: typst::layout::Length {
-                    abs: Abs::zero(),
-                    em: Em::new(0.5),
-                },
-            })),
-            bottom: Some(Smart::Custom(Rel {
-                rel: Ratio::zero(),
-                abs: typst::layout::Length {
-                    abs: Abs::zero(),
-                    em: Em::new(0.5),
-                },
-            })),
+    styles.set(
+        PageElem::margin,
+        Margin {
+            sides: Sides {
+                left: Some(Smart::Custom(Rel::zero())),
+                right: Some(Smart::Custom(Rel::zero())),
+                top: Some(Smart::Custom(Rel {
+                    rel: Ratio::zero(),
+                    abs: typst::layout::Length {
+                        abs: Abs::zero(),
+                        em: Em::new(0.5),
+                    },
+                })),
+                bottom: Some(Smart::Custom(Rel {
+                    rel: Ratio::zero(),
+                    abs: typst::layout::Length {
+                        abs: Abs::zero(),
+                        em: Em::new(0.5),
+                    },
+                })),
+            },
+            two_sided: None,
         },
-        two_sided: None,
-    });
+    );
 
     let sc = sc.chain(&styles);
     inner_content.materialize(sc);
@@ -300,16 +324,17 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
     let label = TexBlock::Maybe(label_text.clone().map(TexBlock::Label).map(Box::new));
     let native = from_native(content.clone());
 
-    macro_rules! message_here{
+    macro_rules! warn_here {
         ($message:expr) => {
-            ctx.diags.push(SourceDiagnostic::warning(content.span(), $message))
-        }
+            ctx.diags
+                .push(SourceDiagnostic::warning(content.span(), format!($message)))
+        };
     }
 
     let result = match native {
         elems::Elem::HideElem(_) => TexBlock::Nothing,
         elems::Elem::CiteElem(_) | elems::Elem::CiteGroup(_) => {
-            message_here!("Unsupported CiteElem");
+            warn_here!("Unsupported CiteElem");
             TexBlock::Nothing
         }
         elems::Elem::EmphElem(emph_elem) => TexBlock::String(format!(
@@ -321,7 +346,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             into_latex(strong_elem.body, sc, ctx,)?.emit(ctx.wild_figures, ctx.config)
         )),
         elems::Elem::EnumElem(_enum_elem) => {
-            message_here!("Unsupported EnumElem");
+            warn_here!("Unsupported EnumElem");
             TexBlock::Nothing
         }
         elems::Elem::FigureElem(figure_elem) => {
@@ -365,7 +390,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             if let Some(body) = f.body_content() {
                 TexBlock::Footnote(Box::new(into_latex(body.clone(), sc, ctx)?))
             } else {
-                message_here!("Found an empty footnote, ignoring");
+                warn_here!("Found an empty footnote, ignoring");
                 TexBlock::Nothing
             }
         }
@@ -378,7 +403,9 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                 2 => "subsection",
                 3 => "subsubsection",
                 _ => {
-                    message_here!("More than 3 levels of sections is unsupported. Falling back on subsection");
+                    warn_here!(
+                        "More than 3 levels of sections is unsupported. Falling back on subsection"
+                    );
                     "subsubsection"
                 }
             };
@@ -395,47 +422,56 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                 TexBlock::String(format!("\\url{{{}}}", url.as_str()))
             }
             typst::model::LinkTarget::Dest(_) => {
-                message_here!("Ignoring link with non-url destination");
+                warn_here!("Ignoring link with non-url destination");
                 TexBlock::Nothing
             }
             typst::model::LinkTarget::Label(_label) => {
-                message_here!("Ignoring link target label");
+                warn_here!("Ignoring link target label");
                 TexBlock::Nothing
             }
         },
         elems::Elem::ListElem(_list_elem) => {
-            message_here!("Unsupported ListElem");
+            warn_here!("Unsupported ListElem");
             TexBlock::Nothing
         }
         elems::Elem::ParElem(par_elem) => into_latex(par_elem.body, sc, ctx)?,
         elems::Elem::ParLineMarker(_) => TexBlock::Nothing,
         elems::Elem::ParbreakElem(_) => TexBlock::String("\n\n".to_string()),
         elems::Elem::QuoteElem(_quote_elem) => {
-            message_here!("Unsupported QuoteElem");
+            warn_here!("Unsupported QuoteElem");
             TexBlock::Nothing
         }
         elems::Elem::RefElem(ref_elem) => TexBlock::Ref(ref_elem.target.resolve().to_string()),
         elems::Elem::HighlightElem(_highlight_elem) => {
-            message_here!("Unsupported HighlightElem");
+            warn_here!("Unsupported HighlightElem");
             TexBlock::Nothing
         }
         elems::Elem::LinebreakElem(_linebreak_elem) => {
-            message_here!("Unsupported LinebreakElem");
+            warn_here!("Unsupported LinebreakElem");
             TexBlock::Nothing
         }
         elems::Elem::TableElem(_table_elem) => {
-            message_here!("Unsupported TableElem");
+            warn_here!("Unsupported TableElem");
             TexBlock::Nothing
         }
         elems::Elem::RawElem(raw_elem) => {
-            if raw_elem.lang.get_ref(sc).as_ref().map(|s| s.as_str()) == Some("latexraw") {
-                let raw_content = match raw_elem.text {
-                    RawContent::Text(s) => s.to_string(),
-                    RawContent::Lines(eco_vec) => {
-                        eco_vec.iter().map(|(s, _)| s.to_string()).join("\n")
-                    }
-                };
+            let lang = raw_elem.lang.get_ref(sc).as_ref().map(|s| s.as_str());
+            let raw_content = match &raw_elem.text {
+                RawContent::Text(s) => s.to_string(),
+                RawContent::Lines(eco_vec) => eco_vec.iter().map(|(s, _)| s.to_string()).join("\n"),
+            };
+            if lang == Some("latexraw") {
                 TexBlock::RawString(raw_content)
+            } else if lang == Some("ttt-eval") {
+                if let Some(eval_result) = &ctx.eval_result {
+                    TexBlock::String(eval_result.get(&raw_content).cloned().unwrap_or_else(|| {
+                        warn_here!("Did not find an entry for {raw_content} in the eval result");
+                        raw_content.clone()
+                    }))
+                } else {
+                    warn_here!("Found a ttt-eval block but no eval result is available. Did you set eval_main in ttt.toml?");
+                    TexBlock::String(raw_content.clone())
+                }
             } else {
                 let filename = compile_subcontent(raw_elem.pack(), sc, ctx.engine)?;
 
@@ -443,7 +479,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             }
         }
         elems::Elem::SmallcapsElem(_smallcaps_elem) => {
-            message_here!("Unsupported SmallcapsElem");
+            warn_here!("Unsupported SmallcapsElem");
             TexBlock::Nothing
         }
         elems::Elem::SmartQuoteElem(elem) => {
@@ -470,20 +506,20 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
         }
         elems::Elem::SpaceElem(_) => TexBlock::String(" ".to_string()),
         elems::Elem::StrikeElem(_strike_elem) => {
-            message_here!("Unsupported StrikeElem");
+            warn_here!("Unsupported StrikeElem");
             TexBlock::Nothing
         }
         elems::Elem::SubElem(_sub_elem) => {
-            message_here!("Unsupported SubElem");
+            warn_here!("Unsupported SubElem");
             TexBlock::Nothing
         }
         elems::Elem::SuperElem(_super_elem) => {
-            message_here!("Unsupported SuperElem");
+            warn_here!("Unsupported SuperElem");
             TexBlock::Nothing
         }
         elems::Elem::TextElem(text) => TexBlock::String(text.text.to_string()),
         elems::Elem::UnderlineElem(_underline_elem) => {
-            message_here!("Unsupported UnderlineElem");
+            warn_here!("Unsupported UnderlineElem");
             TexBlock::Nothing
         }
         elems::Elem::ContextElem(_context_elem) => {
@@ -503,7 +539,9 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             let sc = sc.chain(styled_elem.styles.as_slice());
             into_latex(styled_elem.child, sc, ctx)?
         }
-        elems::Elem::SymbolElem(_symbol_elem) => TexBlock::Nothing,
+        elems::Elem::SymbolElem(symbol_elem) => {
+            TexBlock::String(symbol_elem.text.to_string())
+        },
         elems::Elem::BoxElem(_) => {
             ctx.diags.push(SourceDiagnostic::warning(
                 content.span(),
@@ -512,10 +550,8 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             TexBlock::Nothing
         }
         elems::Elem::Ignored => {
-            let diag = SourceDiagnostic::warning(
-                content.span(),
-                "Encountered a fully ignored element.",
-            );
+            let diag =
+                SourceDiagnostic::warning(content.span(), "Encountered a fully ignored element.");
 
             ctx.minor_issues
                 .entry(MinorIssueKind::IgnoredElem)
@@ -523,7 +559,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                 .push(diag);
 
             TexBlock::Nothing
-        },
+        }
     };
     Ok(result)
 }
@@ -541,11 +577,17 @@ fn main() -> Result<()> {
         Err(e) => return Err(anyhow!("{e:#}").into()),
     };
 
+    let eval_result = config
+        .eval_main
+        .as_ref()
+        .map(|file| eval::run_eval(&file))
+        .transpose()?;
+
     let template = std::fs::read_to_string(&config.template)
         .with_context(|| format!("Failed to read template from {}", config.template))?;
 
-    let main_source = std::fs::read_to_string(&args.input)
-        .with_context(|| format!("Failed to read {}", args.input))?;
+    let main_source = std::fs::read_to_string(&config.content_main)
+        .with_context(|| format!("Failed to read {}", config.content_main))?;
 
     let world = TypstWrapperWorld::new(
         current_dir()
@@ -553,7 +595,7 @@ fn main() -> Result<()> {
             .to_str()
             .ok_or_else(|| anyhow!("Current dir was not a unicode path"))?
             .to_string(),
-        &args.input,
+        &config.content_main,
         main_source,
     );
 
@@ -577,6 +619,8 @@ fn main() -> Result<()> {
         engine: &mut engine,
         last_smart_quote: SmartQuoteState::Closed,
         minor_issues: HashMap::new(),
+        input: &config.content_main,
+        eval_result
     };
 
     let result = (|| {
@@ -603,7 +647,7 @@ fn main() -> Result<()> {
                 )
             });
 
-        let filename = format!("{}.tex", args.input);
+        let filename = format!("{}.tex", config.content_main);
         std::fs::write(filename, latex_source.to_string())
             .with_context(|| "Failed to write out/out.tex")?;
 
@@ -630,7 +674,7 @@ fn main() -> Result<()> {
             match issue {
                 MinorIssueKind::SingleSmartQuote => {
                     eprintln!("    Smart single quote: {}", diags.len())
-                },
+                }
                 MinorIssueKind::IgnoredElem => {
                     eprintln!("    Ignored element:    {}", diags.len())
                 }
