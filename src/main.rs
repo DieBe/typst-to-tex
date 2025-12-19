@@ -24,8 +24,17 @@ use typst::engine::Sink;
 use typst::engine::Traced;
 use typst::foundations::Content;
 use typst::foundations::NativeElement;
+use typst::foundations::Smart;
 use typst::foundations::StyleChain;
+use typst::foundations::Styles;
 use typst::introspection::Introspector;
+use typst::layout::Abs;
+use typst::layout::Em;
+use typst::layout::Margin;
+use typst::layout::PageElem;
+use typst::layout::Ratio;
+use typst::layout::Rel;
+use typst::layout::Sides;
 use typst::model::FigureElem;
 use typst::model::Supplement;
 use typst::syntax::Span;
@@ -146,34 +155,32 @@ fn compile_subcontent(
     let filename = format!("{}.pdf", random::<u64>());
     let output_file = Utf8PathBuf::from("generated").join(filename);
 
-    let styles = &[
-        // PageElem::set_width(Smart::Auto).wrap(),
-        // PageElem::set_height(Smart::Auto).wrap(),
-        // PageElem::set_margin(Margin::splat(Some(Smart::Custom(Rel::zero())))).wrap(),
-        // PageElem::set_margin(Margin {
-        //     sides: Sides {
-        //         left: Some(Smart::Custom(Rel::zero())),
-        //         right: Some(Smart::Custom(Rel::zero())),
-        //         top: Some(Smart::Custom(Rel {
-        //             rel: Ratio::zero(),
-        //             abs: typst::layout::Length {
-        //                 abs: Abs::zero(),
-        //                 em: Em::new(0.5),
-        //             },
-        //         })),
-        //         bottom: Some(Smart::Custom(Rel {
-        //             rel: Ratio::zero(),
-        //             abs: typst::layout::Length {
-        //                 abs: Abs::zero(),
-        //                 em: Em::new(0.5),
-        //             },
-        //         })),
-        //     },
-        //     two_sided: None,
-        // })
-        // .wrap(),
-    ];
-    let sc = sc.chain(styles);
+    let mut styles = Styles::new();
+    styles.set(PageElem::width, Smart::Auto);
+    styles.set(PageElem::height, Smart::Auto);
+    styles.set(PageElem::margin, Margin {
+        sides: Sides {
+            left: Some(Smart::Custom(Rel::zero())),
+            right: Some(Smart::Custom(Rel::zero())),
+            top: Some(Smart::Custom(Rel {
+                rel: Ratio::zero(),
+                abs: typst::layout::Length {
+                    abs: Abs::zero(),
+                    em: Em::new(0.5),
+                },
+            })),
+            bottom: Some(Smart::Custom(Rel {
+                rel: Ratio::zero(),
+                abs: typst::layout::Length {
+                    abs: Abs::zero(),
+                    em: Em::new(0.5),
+                },
+            })),
+        },
+        two_sided: None,
+    });
+
+    let sc = sc.chain(&styles);
     inner_content.materialize(sc);
 
     for _ in 1..5 {
