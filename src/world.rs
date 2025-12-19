@@ -1,13 +1,14 @@
-// This is stolen directly from https://github.com/tfachmann/typst-as-library/blob/main/src/lib.rs
+//  This is stolen and slightly modified from
+// https://github.com/tfachmann/typst-as-library/blob/main/src/lib.rs
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use typst::diag::{eco_format, FileError, FileResult, PackageError, PackageResult};
-use typst::foundations::{Bytes, Datetime, Dict, IntoValue, Value};
+use typst::foundations::{Bytes, Datetime, Dict, IntoValue};
 use typst::syntax::package::PackageSpec;
-use typst::syntax::{FileId, Source};
+use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt};
@@ -18,8 +19,7 @@ pub struct TypstWrapperWorld {
     /// Root path to which files will be resolved.
     root: PathBuf,
 
-    /// The content of a source.
-    source: Source,
+    source_id: FileId,
 
     /// The standard library.
     library: LazyHash<Library>,
@@ -44,25 +44,36 @@ pub struct TypstWrapperWorld {
 }
 
 impl TypstWrapperWorld {
-    pub fn new(root: String, source: String) -> Self {
+    pub fn new(root: String, source_path: &impl AsRef<Path>, source: String) -> Self {
         let root = PathBuf::from(root);
         let fonts = FontSearcher::new().include_system_fonts(true).search();
 
         let mut inputs = Dict::new();
         inputs.insert("is_ttt".into(), "yes".into_value());
         let library = Library::builder().with_inputs(inputs).build();
+
+        let mut files = HashMap::new();
+        let source_id = FileId::new(None, VirtualPath::new(source_path));
+        files.insert(
+            source_id,
+            FileEntry {
+                bytes: Bytes::new(source.as_bytes().to_vec()),
+                source: Some(Source::new(source_id, source)),
+            },
+        );
+
         Self {
             library: LazyHash::new(library),
             book: LazyHash::new(fonts.book),
             root,
             fonts: fonts.fonts,
-            source: Source::detached(source),
             time: time::OffsetDateTime::now_utc(),
             cache_directory: std::env::var_os("CACHE_DIRECTORY")
                 .map(|os_path| os_path.into())
                 .unwrap_or(std::env::temp_dir()),
             http: ureq::Agent::new(),
-            files: Arc::new(Mutex::new(HashMap::new())),
+            files: Arc::new(Mutex::new(files)),
+            source_id,
         }
     }
 }
@@ -71,14 +82,15 @@ impl TypstWrapperWorld {
 #[derive(Clone, Debug)]
 struct FileEntry {
     bytes: Bytes,
+    /// This is filled in on-demand in the source function
     source: Option<Source>,
 }
 
 impl FileEntry {
-    fn new(bytes: Vec<u8>, source: Option<Source>) -> Self {
+    fn new(bytes: Vec<u8>) -> Self {
         Self {
             bytes: Bytes::new(bytes),
-            source,
+            source: None,
         }
     }
 
@@ -117,7 +129,7 @@ impl TypstWrapperWorld {
         let content = std::fs::read(&path).map_err(|error| FileError::from_io(error, &path))?;
         Ok(files
             .entry(id)
-            .or_insert(FileEntry::new(content, None))
+            .or_insert(FileEntry::new(content.clone()))
             .clone())
     }
 
@@ -188,16 +200,12 @@ impl typst::World for TypstWrapperWorld {
 
     /// Accessing the main source file.
     fn main(&self) -> FileId {
-        self.source.id()
+        self.source_id
     }
 
     /// Accessing a specified source file (based on `FileId`).
     fn source(&self, id: FileId) -> FileResult<Source> {
-        if id == self.source.id() {
-            Ok(self.source.clone())
-        } else {
-            self.file(id)?.source(id)
-        }
+        self.file(id)?.source(id)
     }
 
     /// Accessing a specified file (non-file).

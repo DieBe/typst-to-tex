@@ -28,6 +28,7 @@ zune-inflate = { version = "0.2", default-features = false, features = [
 tar = "0.4"
 ureq = "2.9"
 ttf-parser = "0.25"
+codespan-reporting = "0.13.1"
 
 [patch.crates-io]
 # typst = {git = "https://github.com/TheZoq2/typst.git", branch = "state_pub"}

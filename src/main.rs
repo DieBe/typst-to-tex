@@ -1,3 +1,4 @@
+mod diagnostics;
 mod elems;
 mod world;
 
@@ -7,6 +8,7 @@ use std::env::current_dir;
 use camino::Utf8PathBuf;
 use clap::Parser;
 use color_eyre::eyre::anyhow;
+use color_eyre::eyre::bail;
 use elems::from_native;
 use facet::Facet;
 use itertools::Itertools;
@@ -27,14 +29,13 @@ use typst::model::FigureElem;
 use typst::model::Supplement;
 use typst::syntax::Span;
 use typst::text::RawContent;
-use typst::Library;
-use typst::LibraryExt;
 use typst::World;
 use typst::ROUTINES;
 use typst_layout::layout_document;
 use typst_pdf::pdf;
 use typst_pdf::PdfOptions;
 
+use crate::diagnostics::Diagnostics;
 use crate::world::TypstWrapperWorld;
 
 #[derive(Facet)]
@@ -57,21 +58,29 @@ pub struct CompileArgs {
     pub input: Utf8PathBuf,
 }
 
-fn eval_typst(world: &dyn World) -> Result<Content> {
-    let main = world.main();
-    let main = world.source(main).context("Did not find a main")?;
-    let traced = Traced::new(Span::detached());
+fn eval_typst(world: &dyn World, diags: &mut Diagnostics) -> Result<Content> {
+    let main_id = world.main();
+    let main = world.source(main_id).context("Did not find a main")?;
+    let traced = Traced::new(Span::from_range(main_id, 0..main.text().as_bytes().len()));
     let mut sink = Sink::new();
 
-    let module = typst_eval::eval(
+    let module = match typst_eval::eval(
         &ROUTINES,
         world.track(),
         traced.track(),
         sink.track_mut(),
         Route::default().track(),
         &main,
-    )
-    .unwrap();
+    ) {
+        Ok(module) => module,
+        Err(e) => {
+            for diag in e {
+                diags.push(diag);
+            }
+
+            bail!("Typst eval failed")
+        }
+    };
 
     let content = module.content();
 
@@ -486,49 +495,57 @@ fn main() -> Result<()> {
             .to_str()
             .ok_or_else(|| anyhow!("Current dir was not a unicode path"))?
             .to_string(),
+        &args.input,
         main_source,
     );
 
-    println!("Going to eval typst");
+    let mut diagnostics = Diagnostics::new();
 
-    let content = eval_typst(&world)?;
+    let result = (|| {
+        let content = eval_typst(&world, &mut diagnostics)?;
 
-    let library = world.library();
-    let sc = StyleChain::new(&library.styles);
+        let library = world.library();
 
-    let empty_introspector = Introspector::default();
-    let traced = Traced::new(Span::detached());
-    let mut sink = Sink::new();
-    let mut engine = Engine {
-        routines: &ROUTINES,
-        world: (&world as &dyn World).track(),
-        introspector: empty_introspector.track(),
-        traced: traced.track(),
-        sink: sink.track_mut(),
-        route: Route::default(),
-    };
+        let sc = StyleChain::new(&library.styles);
 
-    let mut wild_figures = HashMap::new();
-    let latex = into_latex(content, &mut wild_figures, &config, sc, &world, &mut engine)?;
+        let empty_introspector = Introspector::default();
+        let traced = Traced::new(Span::detached());
+        let mut sink = Sink::new();
+        let mut engine = Engine {
+            routines: &ROUTINES,
+            world: (&world as &dyn World).track(),
+            introspector: empty_introspector.track(),
+            traced: traced.track(),
+            sink: sink.track_mut(),
+            route: Route::default(),
+        };
 
-    let latex_source = template.replace("%CONTENT%", &latex.emit(&wild_figures, &config));
+        let mut wild_figures = HashMap::new();
+        let latex = into_latex(content, &mut wild_figures, &config, sc, &world, &mut engine)?;
 
-    // Citation groups are easier to fix with regex than to look for them in the source
-    let cite_fix_regex = Regex::new(r"(\s+~\\cite\{([^}]*)\})+").unwrap();
-    let cite_body_regex = Regex::new(r"\s+~\\cite\{([^}]*)\}").unwrap();
-    let latex_source =
-        cite_fix_regex.replace_all(&latex_source, |captures: &regex::Captures<'_>| {
-            let inner = captures.get(0).unwrap().as_str();
-            let inner_caps = cite_body_regex.captures_iter(inner);
-            format!(
-                r"\cite{{{}}}",
-                inner_caps.map(|cap| cap.get(1).unwrap().as_str()).join(",")
-            )
-        });
+        let latex_source = template.replace("%CONTENT%", &latex.emit(&wild_figures, &config));
 
-    let filename = format!("{}.tex", args.input);
-    std::fs::write(filename, latex_source.to_string())
-        .with_context(|| "Failed to write out/out.tex")?;
+        // Citation groups are easier to fix with regex than to look for them in the source
+        let cite_fix_regex = Regex::new(r"(\s+~\\cite\{([^}]*)\})+").unwrap();
+        let cite_body_regex = Regex::new(r"\s+~\\cite\{([^}]*)\}").unwrap();
+        let latex_source =
+            cite_fix_regex.replace_all(&latex_source, |captures: &regex::Captures<'_>| {
+                let inner = captures.get(0).unwrap().as_str();
+                let inner_caps = cite_body_regex.captures_iter(inner);
+                format!(
+                    r"\cite{{{}}}",
+                    inner_caps.map(|cap| cap.get(1).unwrap().as_str()).join(",")
+                )
+            });
 
-    Ok(())
+        let filename = format!("{}.tex", args.input);
+        std::fs::write(filename, latex_source.to_string())
+            .with_context(|| "Failed to write out/out.tex")?;
+
+        Ok(())
+    })();
+
+    diagnostics.report(&world)?;
+
+    result
 }
