@@ -112,7 +112,7 @@ pub struct Config {
     /// The wrapper to use around inline typst content to make it look inlines.
     /// This seems to need tweaking on a per-template basis but the default here
     /// can serve as a starting point
-    #[facet(default = "\\raisebox{-0.5em}[1em]")]
+    #[facet(default = "\\raisebox{-5pt}[1em]")]
     inline_wrapper: String,
 }
 
@@ -188,15 +188,15 @@ fn compile_subcontent(
                 top: Some(Smart::Custom(Rel {
                     rel: Ratio::zero(),
                     abs: typst::layout::Length {
-                        abs: Abs::zero(),
-                        em: Em::new(0.5),
+                        abs: Abs::pt(5.),
+                        em: Em::zero(),
                     },
                 })),
                 bottom: Some(Smart::Custom(Rel {
                     rel: Ratio::zero(),
                     abs: typst::layout::Length {
-                        abs: Abs::zero(),
-                        em: Em::new(0.5),
+                        abs: Abs::pt(5.),
+                        em: Em::zero(),
                     },
                 })),
             },
@@ -264,18 +264,17 @@ impl TexBlock {
                 supplement,
             } => {
                 let placement = &config.figure_placement;
-                let supplement_override = match supplement {
-                    Some(s) => format!(r"\renewcommand\figurename{{{}}}", s.to_string()),
-                    None => "".to_string(),
+                let environment = match supplement {
+                    Some(s) if s == "Listing" => "Listing",
+                    _ => "figure"
                 };
                 indoc::formatdoc!(
                     r#"
-                    \begin{{figure}}{placement}
-                        {supplement_override}
+                    \begin{{{environment}}}{placement}
                         \centering
                         \maxsizebox{{\textwidth}}{{!}}{{\includegraphics{{{content_file}}}}}
                         {caption}
-                    \end{{figure}}
+                    \end{{{environment}}}
                     "#,
                     caption = if let Some(caption) =
                         caption.as_ref().map(|s| s.emit(wild_figures, config))
@@ -642,7 +641,7 @@ fn main() -> Result<()> {
                 let inner = captures.get(0).unwrap().as_str();
                 let inner_caps = cite_body_regex.captures_iter(inner);
                 format!(
-                    r"\cite{{{}}}",
+                    r"~\cite{{{}}}",
                     inner_caps.map(|cap| cap.get(1).unwrap().as_str()).join(",")
                 )
             });

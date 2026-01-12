@@ -22,7 +22,8 @@ can add `latexraw` blocks to your typst document to have one source of truth.
 Install `ttt` with `cargo install --git https://gitlab.com/TheZoq2/ttt.git`
 
 Create a `template.tex` file which does the latex preamble stuff your document requires. Generally, it is best to use the journal template here, and just replace the content with `%CONTENT%`.
-For including generated PDFs, you need to use the `graphicx` and `adjustbox` packages
+For including generated PDFs, you need to use the `graphicx` and `adjustbox` packages, and for listings
+you need some special `float` code
 
 ```latex
 % template.tex:
@@ -30,6 +31,13 @@ For including generated PDFs, you need to use the `graphicx` and `adjustbox` pac
 
 \usepackage{graphicx}
 \usepackage{adjustbox}
+
+% For listings to render as listings, this is required
+\usepackage{float}
+
+\newfloat{Listing}{htpb}{lop}
+\DeclareCaptionSubType{Listing}
+
 
 
 \begin{document}
