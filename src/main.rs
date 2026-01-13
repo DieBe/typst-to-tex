@@ -516,7 +516,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             warn_here!("Unsupported SuperElem");
             TexBlock::Nothing
         }
-        elems::Elem::TextElem(text) => TexBlock::String(text.text.to_string()),
+        elems::Elem::TextElem(text) => TexBlock::String(text.text.to_string().replace("%", "\\%")),
         elems::Elem::UnderlineElem(_underline_elem) => {
             warn_here!("Unsupported UnderlineElem");
             TexBlock::Nothing
