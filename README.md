@@ -19,7 +19,7 @@ can add `latexraw` blocks to your typst document to have one source of truth.
 
 ## Usage
 
-Install `ttt` with `cargo install --git https://gitlab.com/TheZoq2/ttt.git`
+Install `ttt` with `cargo install --git https://codeberg.org/TheZoq2/ttt.git`
 
 Create a `template.tex` file which does the latex preamble stuff your document requires. Generally, it is best to use the journal template here, and just replace the content with `%CONTENT%`.
 For including generated PDFs, you need to use the `graphicx` and `adjustbox` packages, and for listings
