@@ -1,30 +1,269 @@
+\documentclass{article}
+% template.tex:
+\usepackage{ifthen}
+\usepackage[utf8]{inputenc}
+\usepackage{graphics}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{tcolorbox}
+\usepackage{hyperref}
+\usepackage{svg}
+\usepackage{multicol}
+\usepackage[section]{placeins}
+\usepackage[backend=biber,style=numeric]{biblatex}
+\addbibresource{sources.bib}
+
+\pagestyle{plain}
+\voffset -5mm
+\oddsidemargin  0mm
+\evensidemargin -11mm
+\marginparwidth 2cm
+\marginparsep 0pt
+\topmargin 0mm
+\headheight 0pt
+\headsep 0pt
+\topskip 0pt
+\textheight 255mm
+\textwidth 165mm
+
+\newcommand{\duedate} {}
+\newcommand{\setduedate}[1]{%
+\renewcommand\duedate {Due date:~ #1}}
+\newcommand\isassignment {false}
+\newcommand{\setassignment}{\renewcommand\isassignment {true}}
+\newcommand{\ifassignment}[1]{\ifthenelse{\boolean{\isassignment}}{#1}{}}
+\newcommand{\ifnotassignment}[1]{\ifthenelse{\boolean{\isassignment}}{}{#1}}
+
+\newcommand{\assignmentpolicy}{
+\begin{tcolorbox}[colback=gray!10, colframe=black,
+                  title={HPC Lab for CSE 2025 --- Submission Instructions},
+                  fonttitle=\bfseries,
+                  sharp corners,
+                  boxrule=0.8pt,
+                  left=5pt, right=5pt, top=5pt, bottom=5pt]
+% \small
+\textbf{Following these instructions is mandatory}: Submissions that do not
+comply \textbf{will not be considered}.
+\begin{itemize}
+\item \textbf{Submission Platform}:
+      Assignments must be submitted via
+      \href{https://sam-up.math.ethz.ch/?lecture=401-3670-00}{SAM-UP}.
+\item \textbf{Required Files}: Your submission must include:
+      \begin{itemize}
+      \item \textbf{Report}: A PDF summarizing your results and observations,
+            based on this \LaTeX\ template.
+            \begin{itemize}
+            \item File name:
+                  \texttt{project\_number\_lastname\_firstname.pdf}
+            \item You are allowed to discuss all questions with anyone you like;
+                  however: (i) your submission must list anyone you discussed
+                  problems with and (ii) you must write up your submission
+                  independently.
+            \end{itemize}
+      \item \textbf{Source Code Archive}: A \textbf{compressed tar archive},
+            named \texttt{project\_number\_lastname\_firstname.tar.gz},
+            containing:
+            \begin{itemize}
+            \item All source code files.
+            \item Build files and scripts (e.g., \texttt{Makefile}, batch job
+                  scripts, plot scripts, etc).
+                  If you modified any provided files, ensure they still work as
+                  expected.
+            \item The full \LaTeX\ source of your report including all needed
+                  files to build the report (figures, listings, etc).
+            \end{itemize}
+      \item \textbf{Size Limit}: The total submission (PDF + archive) must not
+            exceed \textbf{25 MB}.
+      \item \textbf{File Naming Rules}: Use only \texttt{ASCII} characters
+            (avoid spaces, special symbols, and non-English letters).
+      \end{itemize}
+\item \textbf{Grading Process}: The TAs will evaluate your project based on:
+      \begin{itemize}
+      \item Your report write-up.
+      \item Your code implementation.
+      \item Benchmarking your code's performance.
+      \end{itemize}
+\end{itemize}
+\end{tcolorbox}
+}
+\newcommand{\punkte}[1]{\hspace{1ex}\emph{\mdseries\hfill(#1~\ifcase#1{Points}\or{Points}\else{Points}\fi)}}
+
+
+\newcommand\serieheader[6]{
+\thispagestyle{empty}%
+\begin{flushleft}
+\includegraphics[width=0.4\textwidth]{ETHlogo_13}
+\end{flushleft}
+  \noindent%
+  {\large\ignorespaces{\textbf{#1}}\hspace{\fill}\ignorespaces{ \textbf{#2}}}\\ \\%
+  {\large\ignorespaces #3 \hspace{\fill}\ignorespaces #4}\\
+  \noindent%
+  \bigskip
+  \hrule\par\bigskip\noindent%
+  \bigskip {\ignorespaces {\Large{\textbf{#5}}}
+  \hspace{\fill}\ignorespaces \large \ifthenelse{\boolean{\isassignment}}{\duedate}{#6}}
+  \hrule\par\bigskip\noindent%  \linebreak
+ }
+
+\makeatletter
+\def\enumerateMod{\ifnum \@enumdepth >3 \@toodeep\else
+      \advance\@enumdepth \@ne
+      \edef\@enumctr{enum\romannumeral\the\@enumdepth}\list
+      {\csname label\@enumctr\endcsname}{\usecounter
+        {\@enumctr}%%%? the following differs from "enumerate"
+        \topsep0pt%
+        \partopsep0pt%
+        \itemsep0pt%
+        \def\makelabel##1{\hss\llap{##1}}}\fi}
+\let\endenumerateMod =\endlist
+\makeatother
+
+
+\usepackage{listings}
+\usepackage{xcolor}
+
+% Define colors for syntax highlighting
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.95}
+
+% Configure C style
+\lstdefinestyle{cstyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{blue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    language=C
+}
+
+\lstset{style=cstyle}
+
+
+\newfloat{Listing}{htpb}{lop}
+\DeclareCaptionSubType{Listing}
+
+
+\begin{document}
 
 
 
-
-
-
-
-
-
-\section{Typst (paritally) rendered by LaTeX}\label{sec:label} 
-
-Fig. \ref{fig:figure} contains the source code for this document! \raisebox{-0.5em}[1em]{\includegraphics{generated/8253808958226170007.pdf}}
-
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magnam aliquam quaerat.
-
-Section \ref{sec:label} has some cool stuff in it!
-
-\textbf{bold}
 
  
 
-\begin{figure}[t]
-    \renewcommand\figurename{Fig.}
-    \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/1514193927011470895.pdf}}
-    \caption{But the caption is!\label{fig:figure}}
-\end{figure}
+   
+
+
+
+
+
  
 
-Content from the submodule 
+\textbf{Randomness Tests} * \textbf{Uniformity (\(\chi^{2}\)):} Divides interval into B bins, compares observed (\(n_{i}\)) to expected (\(E_{i} = M/B\)) counts: \(\chi^{2} = \frac{1}{B}\sum_{i = 1}^{B}\frac{\left( n_{i} - E_{i} \right)^{2}}{E_{i}}\). Small \(\chi^{2}\) indicates agreement. * \textbf{Correlation:} Measures time correlation \(C(k) = \frac{\langle x_{i}x_{i + k}\rangle_{i} - \langle x_{i}\rangle_{i}\langle x_{i + k}\rangle_{i}}{\langle x_{i}x_{i}\rangle_{i} - \langle x_{i}\rangle_{i}\langle x_{i}\rangle_{i}}\). \(C(k) = 0\) for no correlation. \(\langle x_{i}x_{i + k}\rangle_{i} = \frac{1}{B - k}\sum_{i = 1}^{B - k}x_{i}x_{i + k}\)
+
+\subsection{Equations of Motion}\label{equations-of-motion}    \subsubsection{Lagrangian formulation}\label{lagrangian-formulation}  
+
+\subsubsection{Hamiltonian formulation}\label{hamiltonian-formulation}  
+
+\subsection{Schrödinger Equation}\label{schrödinger-equation}  
+
+\subsection{Thermodynamics}\label{thermodynamics}    
+
+
+
+
+
+ 
+
+ 
+
+ 
+
+ 
+
+\section{Molecular Dynamics}\label{molecular-dynamics}   
+
+\subsubsection{Degrees of Freedom}\label{degrees-of-freedom}    
+
+\subsubsection{Classical Atomistic Force fields}\label{classical-atomistic-force-fields}   
+
+     
+
+\textbf{Integrators} * Integrate \(\frac{d^{2}r_{i}(t)}{dt^{2}} = \frac{f_{i}}{m_{i}}\). * \textit{Leapfrog}: \(v\left( t_{n} + \frac{\Delta t}{2} \right) = v\left( t_{n} - \frac{\Delta t}{2} \right) + \frac{f\left( x_{n} \right)}{m_{i}}\Delta t + \mathcal{O}\left( \Delta t^{3} \right)\), \(x\left( t_{n} + \Delta t \right) = x\left( t_{n} \right) + v\left( t_{n} + \frac{\Delta t}{2} \right)\Delta t + \mathcal{O}\left( \Delta t^{3} \right)\). Timestep: usually order of \(10^{- 15}\) * \textit{Euler, Runge-Kutta}. Balance performance/accuracy. Low order (leapfrog/verlet) lead to noisy forces. Algorithms without velocities cannot couple to thermostats.
+
+\textbf{Metropolis Monte Carlo} * Samples configurations with canonical (Boltzmann) weight. Trial move accepted with probability: \(P = \min(1,e^{- \beta\Delta V})\), where \(\Delta V\) is the (pot.) energy difference. \(\beta = \frac{1}{k_{B}T}\). For uphill moves \((\Delta V > 0)\), accept if \(s < e^{- \beta\Delta V}\) with \(s \in U\lbrack 0,1\rbrack\).
+
+\textbf{Bond constraints} * Timestep limited by fastest motion (~5fs bond vibration). Rule of thumb \(\Delta t = \tau/10\). * Constraining bonds to fixed length increases timestep (~2fs). Uninteresting for larger systems. * Algorithms: \textit{SHAKE, RATTLE, SETTLE, LINCS}. SHAKE is iterative.
+
+\subsubsection{Boundary Conditions}\label{boundary-conditions}  \textbf{Spatial Boundary Conditions} * Finite size effects (surface). Worse for microscopic sim. * Vacuum effects: Surface tension, larger charge interactions. Remedy: Implicit/explicit solvents, reduce charges. * Boundary layer: Restrict motion (harmonic potential), add ext. force.
+
+\textbf{Periodic Boundary Conditions (PBC)} * Avoids surface effects. Simulates infinite lattice. Particle exiting enters opposing face. * Interactions evaluated using lattice-sum methods (Fourier series). * Issue: Self-interaction if period too small (\(R_{c} < L/2\)). Large computation effort. Truncate non-bonded interactions at \(R_{c}\). * Easiest shape: boxes. Other possible.
+
+\textbf{Thermodynamic Boundary Conditions} * Fix state variables. Imposed by ensembles. * Soft coupling desired (fixed T long-term, but fluctuates). Negative-feedback mechanism.
+
+\textbf{Instantaneous pressure} * From \textit{virial theorem}: \(P = \frac{2(K–W)}{3\mathcal{V}}\), \(W = \frac{1}{2}\sum_{i = 1}^{N}r_{i} \cdot F_{i}\). * Barostating by isotropic coordinate scaling: Scale edges if P differs from target. * \(P = \frac{Nk_{B}T}{\mathcal{V}} - \langle\frac{2W}{3\mathcal{V}}\rangle\). Sum W using minimum-image vector.
+
+\subsubsection{Thermostating, Barostating}\label{thermostating-barostating}  
+
+\textbf{Temperature constraining} * Modify Newtons eqns: \(\dot{p} = - \nabla_{r}V–\zeta_{T}p\), \(\zeta_{T} = \frac{- \nabla_{r}V \cdot \dot{p} - F \cdot \dot{r}}{2K}\). Hard constraint on K (T). * Isokinetic ensemble for momenta. * Implementation (\textit{velocity scaling}): * \textbf{Hoover-Evans}: scale \(v\left( t + \frac{\Delta}{2} \right)\) by \(\lambda = \left( \frac{K\left( t - \frac{\Delta}{2} \right)}{K\left( t + \frac{\Delta}{2} \right)} \right)^{\frac{1}{2}}\). \(\dot{K} = 0\). \textbf{Woodcock}: scale \(v\left( t + \frac{\Delta}{2} \right)\) by \(\lambda = \left( \frac{K_{\text{target}}}{K\left( t + \frac{\Delta}{2} \right)} \right)^{\frac{1}{2}}\). Target K maintained, no drift.
+
+\textbf{Berendsen Thermostat (weak coupling)}: * Not hard constraint, exponential relaxation of \(T \rightarrow T_{0}\). * \(\dot{T} = \frac{T_{0} - T}{\tau_{t}}\), \(\tau_{T}\): relaxation time. * \(T = 2\frac{K}{N_{\text{df }}k_{B}},K = \frac{1}{2}\sum m_{i}v_{i}^{2}\). * Velocity scaling each step: \(\lambda = \sqrt{1 + \frac{\Delta t}{\tau_{T}}\left( \frac{T_{0}}{T} - 1 \right)}\) * Effect: smooth \(T\) control, exp. relaxation, reduced fluctuations. * Ensemble ill-defined (depends on \(\tau_{T}\), \(C_{V}\)), ok for equilibration, not strict NVT 
+
+ \textbf{Thermostating via stochastic methods} * \textit{Collision thermostat}: Randomly picks atoms, reassigns velocity from Maxwell-Boltzmann. * \textit{Langevin thermostats}: Add stochastic force (friction + virtual collisions). * Non-deterministic, perturbs dynamics. Needs good random numbers. Realistic exponential T relaxation, robust, efficient, homogeneous thermalization.
+
+\textbf{Pressure constraining} * Modify eqns: \(\dot{r} = \nabla_{p}K + \chi r\), \(\dot{\mathcal{V}} = 3\chi\mathcal{V}\), \(\dot{p} = - \nabla_{r}V - \chi p\). * \(\chi\) from \(3P\mathcal{V} = 9P\chi\mathcal{V} = 2\sum_{i = 1}^{N}\frac{p_{i} \cdot {\dot{p}}_{i}}{m_{i}} - \sum_{i = 1}^{N}\left( F_{i} \cdot {\dot{r}}_{i} + r_{i} \cdot {\dot{F}}_{i} \right)\). Difficulty in virial derivative.
+
+
+
+\textbf{Barostating via stochastic methods} * \textit{Langevin barostat}. Adds frict. to \(\mathcal{V}^{¨}\), stoch. V fluctua.
+
+\textbf{Grand-canonical simulations} * N varies, \(\mu\) constant on average. Discrete variation. \(\mu = \frac{\partial F}{\partial N}\). * \textit{Van Gunsteren weak-coupling}: Estimate excess \(\mu\) (\(\mu^{ex} = - \beta^{- 1}\ln\langle e^{- \beta E_{test}}\rangle_{N}\)), adjust N: \(\frac{dN(t)}{dt} = \mathrm{\text{round}}\left( \alpha_{N}\left( e^{- \beta\mu^{ex}}–e^{- \beta\mu^{0}} \right) \right)\). Equilibration period after adjustment.
+
+\textbf{Selection of coupling times} * Simultaneous barostating/thermostating: \(\tau_{T} < \tau_{P}\). Otherwise unphysical fluctuations. * P highly fluctuating (\(P \sim K - W\)).
+
+
+
+\section{Stochastic Dynamics}\label{stochastic-dynamics}   \subsection{Calculation of Properties}\label{analysis-of-properties}  
+
+\subsubsection{1. Preprocessing}\label{preprocessing}   
+
+\subsubsection{2. Statistical analysis}\label{statistical-analysis}      
+
+\subsubsection{3. Calculation of Properties}\label{types-of-properties}     
+
+\subsubsection{4. Interpretation of results}\label{interpretation-of-results} 
+
+\textbf{Ergodicity, equilibration} * Ergodic theorem holds for \(t \rightarrow \infty\). Not necessarily true for finite trajectories. * Discard initial period (equilibration) to account for non-representative start. * Equilibration possible in realistic time if initial config is reasonable (X-ray/NMR). * Improve avg estimate with multiple sims/initial conditions.
+
+\textbf{Block Averaging}: \(\varepsilon = c\frac{\sigma}{\sqrt{N_{\text{eff}}}}\) * \textbf{Error Estimate}: \(N_{\text{eff }} \approxeq \frac{N}{1 + 2\tau_{Q}}\)
+
+\subsection{Free Energy Calculations}\label{free-energy-calculations}  \textbf{Partition Function} (Free Energy A → B): \(\Delta F_{A \rightarrow B} = - k_{B}T\ln(\frac{Z_{B}}{Z_{A}})\), \(Z = \int d\Gamma e^{- \beta U(\Gamma)}\) 
+
+ \subsubsection{Thermodynamic Free Energy differences}\label{thermodynamic-free-energy-differences}    
+
+\subsubsection{Conformational Free-Energy differences}\label{conformational-free-energy-differences}      
+
+\subsubsection{Alchemical Free energy differences}\label{alchemical-free-energy-differences}          
+
+\subsubsection{Cycles}       \subsection{Systems}\label{systems}  
+
+
+
+ \textbf{Hamiltonian \(\equiv\) Newtonian} System with generalized coordinates \(q = \left\{ q_{m} \right\}\), conjugate momenta \(p = \left\{ p_{m} \right\}\), kinetic energy \(K\), potential \(V\). \(H(q,p) = K(q,p) + V(q)\) \textit{Hamilton's equations:} \(\dot{q} = \frac{\partial H}{\partial p},\quad\dot{p} = - \frac{\partial H}{\partial q}\) \textit{Cartesian case:} For \(N\) particles with masses \(m_{n}\), \(H(r,p_{r}) = \sum_{n = 1}^{N}\frac{p_{r,n}^{2}}{2m_{n}} + V(r)\) \({\dot{r}}_{n} = \frac{p_{r,n}}{m_{n}},\quad{\dot{p}}_{r,n} = - \frac{\partial V}{\partial r_{n}} = F_{n}\) \(\Rightarrow\) Hamiltonian \(\Leftrightarrow\) Newton c
+
+\textbf{Code}: \(s(t) = \left\{ N^{-}1\sum_{n = 1}^{N}\left\lbrack {\widetilde{r}}_{n}(t) - r_{n}^{\ast} \right\rbrack^{2} \right\}^{\frac{1}{2}}\)
+
+\raisebox{-5pt}[1em]{\includegraphics{generated/7935136493746420978.pdf}}
+\end{document}

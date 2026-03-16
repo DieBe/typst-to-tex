@@ -5,6 +5,8 @@ mod world;
 
 use std::collections::HashMap;
 use std::env::current_dir;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use camino::Utf8PathBuf;
 use clap::Parser;
@@ -68,6 +70,7 @@ struct Context<'a> {
     config: &'a Config,
     diags: &'a mut Diagnostics,
     engine: &'a mut Engine<'a>,
+    generated_dir: &'a Utf8PathBuf,
 
     /// Tracks the state of " smart quotes to emit the appropriate latex quotes.
     /// ' must still be handled manually for now since they can also appear in
@@ -82,6 +85,9 @@ struct Context<'a> {
     input: &'a Utf8PathBuf,
 
     eval_result: Option<HashMap<String, String>>,
+
+    world: &'a TypstWrapperWorld,
+    pandoc_preamble: Option<String>,
 }
 
 #[derive(Facet)]
@@ -114,6 +120,10 @@ pub struct Config {
     /// can serve as a starting point
     #[facet(default = "\\raisebox{-5pt}[1em]")]
     inline_wrapper: String,
+
+    /// Optional file containing Typst preamble (imports, function definitions)
+    /// that will be prepended when converting math through pandoc.
+    pandoc_preamble: Option<Utf8PathBuf>,
 }
 
 /// Common arguments of compile, watch, and query.
@@ -172,12 +182,24 @@ fn compile_subcontent(
     mut inner_content: Content,
     sc: StyleChain,
     engine: &mut Engine,
+    generated_dir: &Utf8PathBuf,
+    target_width_pt: Option<f64>,
 ) -> Result<Utf8PathBuf> {
     let filename = format!("{}.pdf", random::<u64>());
-    let output_file = Utf8PathBuf::from("generated").join(filename);
+    let include_file = Utf8PathBuf::from("generated").join(&filename);
+    let output_file = generated_dir.join(filename);
 
     let mut styles = Styles::new();
-    styles.set(PageElem::width, Smart::Auto);
+    match target_width_pt {
+        Some(width_pt) => styles.set(
+            PageElem::width,
+            Smart::Custom(typst::layout::Length {
+                abs: Abs::pt(width_pt),
+                em: Em::zero(),
+            }),
+        ),
+        None => styles.set(PageElem::width, Smart::Auto),
+    }
     styles.set(PageElem::height, Smart::Auto);
     styles.set(
         PageElem::margin,
@@ -222,7 +244,7 @@ fn compile_subcontent(
     std::fs::write(&output_file, pdf)
         .with_context(|| format!("Failed to write pdf to {output_file}"))?;
 
-    Ok(output_file)
+    Ok(include_file)
 }
 
 pub enum TexBlock {
@@ -235,8 +257,15 @@ pub enum TexBlock {
         supplement: Option<String>,
     },
     Footnote(Box<TexBlock>),
-    Math(Utf8PathBuf),
-    InlineCode(Utf8PathBuf),
+    /// Math converted to a PDF file (fallback when pandoc fails)
+    MathPdf(Utf8PathBuf),
+    /// Math converted to LaTeX via pandoc
+    MathLatex(std::string::String),
+    InlineCode(String),
+    CodeBlock {
+        code: String,
+        language: Option<String>,
+    },
     Seq(Vec<TexBlock>),
     RawString(String),
     Maybe(Option<Box<TexBlock>>),
@@ -266,6 +295,7 @@ impl TexBlock {
                 let placement = &config.figure_placement;
                 let environment = match supplement {
                     Some(s) if s == "Listing" => "Listing",
+                    Some(s) if s == "Tab." => "table",
                     _ => "figure"
                 };
                 indoc::formatdoc!(
@@ -285,13 +315,23 @@ impl TexBlock {
                     }
                 )
             }
-            TexBlock::Math(pdf) => {
+            TexBlock::MathPdf(pdf) => {
                 let inline_wrapper = &config.inline_wrapper;
                 format!(r#"{inline_wrapper}{{\includegraphics{{{pdf}}}}}"#)
             }
-            TexBlock::InlineCode(pdf) => {
-                let inline_wrapper = &config.inline_wrapper;
-                format!(r#"{inline_wrapper}{{\includegraphics{{{pdf}}}}}"#)
+            TexBlock::MathLatex(latex) => latex.clone(),
+            TexBlock::InlineCode(code) => {
+                format!(r#"\texttt{{{}}}"#, escape_latex_inline_code(code))
+            }
+            TexBlock::CodeBlock { code, language } => {
+                let lang_opt = language
+                    .as_ref()
+                    .map(|lang| format!("[language={lang}]"))
+                    .unwrap_or_default();
+
+                format!(
+                    "\\begin{{lstlisting}}{lang_opt}\n{code}\n\\end{{lstlisting}}\n"
+                )
             }
             TexBlock::Ref(l) => {
                 let sup = match label_to_supplement(l) {
@@ -316,6 +356,111 @@ impl TexBlock {
     }
 }
 
+fn escape_latex_inline_code(input: &str) -> String {
+    input
+        .replace('\\', r#"\textbackslash{}"#)
+        .replace('{', r#"\{"#)
+        .replace('}', r#"\}"#)
+        .replace('%', r#"\%"#)
+        .replace('_', r#"\_"#)
+        .replace('&', r#"\&"#)
+        .replace('#', r#"\#"#)
+        .replace('$', r#"\$"#)
+        .replace('^', r#"\^{}"#)
+        .replace('~', r#"\~{}"#)
+}
+
+fn map_listings_language(lang: &str) -> Option<String> {
+    let mapped = match lang.trim().to_ascii_lowercase().as_str() {
+        "py" | "python" => Some("Python"),
+        "rs" | "rust" => Some("Rust"),
+        "c" => Some("C"),
+        "cpp" | "c++" | "cc" | "cxx" => Some("C++"),
+        "java" => Some("Java"),
+        "go" => Some("Go"),
+        "sql" => Some("SQL"),
+        "bash" | "sh" | "shell" | "zsh" => Some("bash"),
+        _ => None,
+    };
+
+    mapped.map(|s| s.to_string())
+}
+
+fn ensure_listings_preamble(mut source: String) -> String {
+    if !source.contains("\\begin{lstlisting}") {
+        return source;
+    }
+
+    if source.contains(r#"\usepackage{listings}"#) {
+        return source;
+    }
+
+    let insertion = "\\usepackage{listings}\n\\lstset{basicstyle=\\ttfamily\\small,columns=fullflexible,keepspaces=true,showstringspaces=false}\n";
+
+    if let Some(idx) = source.find(r#"\begin{document}"#) {
+        source.insert_str(idx, insertion);
+    } else {
+        source.push('\n');
+        source.push_str(insertion);
+    }
+
+    source
+}
+
+fn get_source_text(span: Span, world: &TypstWrapperWorld) -> Option<String> {
+    let file_id = span.id()?;
+    let source = world.source(file_id).ok()?;
+    let range = source.range(span)?;
+    Some(source.text()[range].to_string())
+}
+
+fn run_pandoc(typst_input: &str) -> Result<String> {
+    let mut child = Command::new("pandoc")
+        .args(["-f", "typst", "-t", "latex"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Failed to run pandoc. Is it installed?")?;
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(typst_input.as_bytes())
+        .context("Failed to write to pandoc stdin")?;
+
+    let output = child
+        .wait_with_output()
+        .context("Failed to wait for pandoc")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("Pandoc failed: {stderr}");
+    }
+
+    Ok(String::from_utf8(output.stdout)
+        .context("Pandoc output was not valid UTF-8")?
+        .trim()
+        .to_string())
+}
+
+fn try_pandoc_math(
+    span: Span,
+    preamble: Option<&str>,
+    world: &TypstWrapperWorld,
+) -> Result<String> {
+    let source_text = get_source_text(span, world)
+        .ok_or_else(|| anyhow!("Could not extract source text for equation"))?;
+
+    let typst_input = match preamble {
+        Some(preamble) => format!("{preamble}\n\n{source_text}"),
+        None => source_text,
+    };
+
+    run_pandoc(&typst_input)
+}
+
 fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result<TexBlock> {
     content.materialize(sc);
 
@@ -332,9 +477,16 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
 
     let result = match native {
         elems::Elem::HideElem(_) => TexBlock::Nothing,
-        elems::Elem::CiteElem(_) | elems::Elem::CiteGroup(_) => {
-            warn_here!("Unsupported CiteElem");
-            TexBlock::Nothing
+        elems::Elem::CiteElem(cite) => {
+            TexBlock::RawString(format!("\\cite{{{}}}", cite.key.resolve()))
+        }
+        elems::Elem::CiteGroup(group) => {
+            let keys: Vec<String> = group
+                .children
+                .iter()
+                .map(|c| c.key.resolve().to_string())
+                .collect();
+            TexBlock::RawString(format!("\\cite{{{}}}", keys.join(",")))
         }
         elems::Elem::EmphElem(emph_elem) => TexBlock::String(format!(
             "\\textit{{{}}}",
@@ -344,14 +496,31 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             "\\textbf{{{}}}",
             into_latex(strong_elem.body, sc, ctx,)?.emit(ctx.wild_figures, ctx.config)
         )),
-        elems::Elem::EnumElem(_enum_elem) => {
-            warn_here!("Unsupported EnumElem");
-            TexBlock::Nothing
+        elems::Elem::EnumElem(enum_elem) => {
+            let items = enum_elem
+                .children
+                .iter()
+                .map(|item| {
+                    let body = into_latex(item.body.clone(), sc, ctx)?;
+                    Ok(format!("\\item {}", body.emit(ctx.wild_figures, ctx.config)))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            TexBlock::RawString(format!(
+                "\\begin{{enumerate}}\n{}\n\\end{{enumerate}}",
+                items.join("\n")
+            ))
         }
         elems::Elem::FigureElem(figure_elem) => {
             let content = FigureElem::new(figure_elem.body.clone());
 
-            let filename = compile_subcontent(content.pack(), sc, ctx.engine)?;
+            // Keep a concrete width so `image(..., width: 100%)` inside figures can resolve.
+            let filename = compile_subcontent(
+                content.pack(),
+                sc,
+                ctx.engine,
+                ctx.generated_dir,
+                Some(469.47),
+            )?;
 
             if let Some(Some(Supplement::Content(c))) =
                 figure_elem.supplement.get_ref(sc).clone().custom()
@@ -381,9 +550,15 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             }
         }
         elems::Elem::EquationElem(eq) => {
-            let filename = compile_subcontent(eq.pack(), sc, ctx.engine)?;
-
-            TexBlock::Math(filename)
+            match try_pandoc_math(content.span(), ctx.pandoc_preamble.as_deref(), ctx.world) {
+                Ok(latex) => TexBlock::MathLatex(latex),
+                Err(e) => {
+                    warn_here!("Pandoc math conversion failed ({e}), falling back to PDF");
+                    let filename =
+                        compile_subcontent(eq.pack(), sc, ctx.engine, ctx.generated_dir, None)?;
+                    TexBlock::MathPdf(filename)
+                }
+            }
         }
         elems::Elem::FootnoteElem(f) => {
             if let Some(body) = f.body_content() {
@@ -429,9 +604,19 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                 TexBlock::Nothing
             }
         },
-        elems::Elem::ListElem(_list_elem) => {
-            warn_here!("Unsupported ListElem");
-            TexBlock::Nothing
+        elems::Elem::ListElem(list_elem) => {
+            let items = list_elem
+                .children
+                .iter()
+                .map(|item| {
+                    let body = into_latex(item.body.clone(), sc, ctx)?;
+                    Ok(format!("\\item {}", body.emit(ctx.wild_figures, ctx.config)))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            TexBlock::RawString(format!(
+                "\\begin{{itemize}}\n{}\n\\end{{itemize}}",
+                items.join("\n")
+            ))
         }
         elems::Elem::ParElem(par_elem) => into_latex(par_elem.body, sc, ctx)?,
         elems::Elem::ParLineMarker(_) => TexBlock::Nothing,
@@ -455,6 +640,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
         }
         elems::Elem::RawElem(raw_elem) => {
             let lang = raw_elem.lang.get_ref(sc).as_ref().map(|s| s.as_str());
+            let is_block = *raw_elem.block.get_ref(sc);
             let raw_content = match &raw_elem.text {
                 RawContent::Text(s) => s.to_string(),
                 RawContent::Lines(eco_vec) => eco_vec.iter().map(|(s, _)| s.to_string()).join("\n"),
@@ -472,9 +658,14 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                     TexBlock::String(raw_content.clone())
                 }
             } else {
-                let filename = compile_subcontent(raw_elem.pack(), sc, ctx.engine)?;
-
-                TexBlock::InlineCode(filename)
+                if is_block {
+                    TexBlock::CodeBlock {
+                        code: raw_content,
+                        language: lang.and_then(map_listings_language),
+                    }
+                } else {
+                    TexBlock::InlineCode(raw_content)
+                }
             }
         }
         elems::Elem::SmallcapsElem(_smallcaps_elem) => {
@@ -516,7 +707,12 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             warn_here!("Unsupported SuperElem");
             TexBlock::Nothing
         }
-        elems::Elem::TextElem(text) => TexBlock::String(text.text.to_string().replace("%", "\\%")),
+        elems::Elem::TextElem(text) => TexBlock::String(
+            text.text.to_string()
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+                .replace("^", "\\^{}")
+        ),
         elems::Elem::UnderlineElem(_underline_elem) => {
             warn_here!("Unsupported UnderlineElem");
             TexBlock::Nothing
@@ -547,6 +743,23 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                 "Unsupported box element",
             ));
             TexBlock::Nothing
+        }
+        elems::Elem::PagebreakElem(_) => {
+            TexBlock::RawString("\\pagebreak".to_string())
+        }
+        elems::Elem::EnumItem(item) => {
+            let body = into_latex(item.body.clone(), sc, ctx)?;
+            TexBlock::RawString(format!(
+                "\\begin{{enumerate}}\n\\item {}\n\\end{{enumerate}}",
+                body.emit(ctx.wild_figures, ctx.config)
+            ))
+        }
+        elems::Elem::ListItem(item) => {
+            let body = into_latex(item.body.clone(), sc, ctx)?;
+            TexBlock::RawString(format!(
+                "\\begin{{itemize}}\n\\item {}\n\\end{{itemize}}",
+                body.emit(ctx.wild_figures, ctx.config)
+            ))
         }
         elems::Elem::Ignored => {
             let diag =
@@ -582,6 +795,13 @@ fn main() -> Result<()> {
         .map(|file| eval::run_eval(&file))
         .transpose()?;
 
+    let pandoc_preamble = config
+        .pandoc_preamble
+        .as_ref()
+        .map(|path| std::fs::read_to_string(path))
+        .transpose()
+        .with_context(|| "Failed to read pandoc preamble file")?;
+
     let template = std::fs::read_to_string(&config.template)
         .with_context(|| format!("Failed to read template from {}", config.template))?;
 
@@ -611,15 +831,23 @@ fn main() -> Result<()> {
     };
     let mut diagnostics = Diagnostics::new();
     let mut wild_figures = HashMap::new();
+    let generated_dir = config
+        .content_main
+        .parent()
+        .map(|parent| parent.join("generated"))
+        .unwrap_or_else(|| Utf8PathBuf::from("generated"));
     let ctx = &mut Context {
         wild_figures: &mut wild_figures,
         config: &config,
         diags: &mut diagnostics,
         engine: &mut engine,
+        generated_dir: &generated_dir,
         last_smart_quote: SmartQuoteState::Closed,
         minor_issues: HashMap::new(),
         input: &config.content_main,
-        eval_result
+        eval_result,
+        world: &world,
+        pandoc_preamble,
     };
 
     let result = (|| {
@@ -646,8 +874,16 @@ fn main() -> Result<()> {
                 )
             });
 
+        // Merge consecutive enumerate/itemize environments that come from individual EnumItem/ListItem elements
+        let enum_merge_regex = Regex::new(r"\\end\{enumerate\}\s*\\begin\{enumerate\}").unwrap();
+        let latex_source = enum_merge_regex.replace_all(&latex_source, "\n");
+        let list_merge_regex = Regex::new(r"\\end\{itemize\}\s*\\begin\{itemize\}").unwrap();
+        let latex_source = list_merge_regex.replace_all(&latex_source, "\n");
+
+        let latex_source = ensure_listings_preamble(latex_source.to_string());
+
         let filename = format!("{}.tex", config.content_main);
-        std::fs::write(filename, latex_source.to_string())
+        std::fs::write(filename, latex_source)
             .with_context(|| "Failed to write out/out.tex")?;
 
         Ok(())

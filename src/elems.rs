@@ -108,12 +108,13 @@ enum Elem {
     SymbolElem(SymbolElem),
     EquationElem(EquationElem),
     BoxElem(BoxElem),
+    PagebreakElem(PagebreakElem),
+    EnumItem(EnumItem),
+    ListItem(ListItem),
 };
 
 unused ("Inner element") {
-    EnumItem(EnumItem;<'a>),
     RawLine(RawLine),
-    ListItem(ListItem;<'a>),
     FootnoteEntry(FootnoteEntry),
     BibliographyElem(BibliographyElem),
 }
@@ -188,7 +189,6 @@ unused ("Internal") {
 unused ("Layout stuff") {
     FigureCaption(FigureCaption),
     DocumentElem(DocumentElem),
-    PagebreakElem(PagebreakElem),
     InlineElem(InlineElem),
     PageElem(PageElem),
     BlockElem(BlockElem),

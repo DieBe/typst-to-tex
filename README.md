@@ -171,3 +171,6 @@ Currently, the system supports what I've needed for my papers, most other things
 - Typst infers supplements for things like figures, while latex does not. I.e. you can write `@fig1` in typst but need to write `Figure~\ref{fig1}` in latex. I have not found a way to infer the supplement, so for now, you have to prefix your references with `fig:`, `tab:` and `lst:`. With no prefix, it is assumed that the reference is a citation
 - Anything using `state` in typst will be very difficult to support. Currently, the compiler uses the typst frontend but does not do layout, state is resolved during layout which means this technique does not work.
 
+# TODOs
+- [x] Code blocks
+- [x] Fix figure includes

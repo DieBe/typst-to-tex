@@ -1,5 +1,3 @@
-\documentclass{article}
-% template.tex:
 \usepackage{ifthen}
 \usepackage[utf8]{inputenc}
 \usepackage{graphics}
@@ -8,7 +6,6 @@
 \usepackage{tcolorbox}
 \usepackage{hyperref}
 \usepackage{svg}
-\usepackage{multicol}
 \usepackage[section]{placeins}
 \usepackage[backend=biber,style=numeric]{biblatex}
 \addbibresource{sources.bib}
@@ -122,17 +119,15 @@ comply \textbf{will not be considered}.
 \usepackage{listings}
 \usepackage{xcolor}
 
-% Define colors for syntax highlighting
 \definecolor{codegreen}{rgb}{0,0.6,0}
 \definecolor{codegray}{rgb}{0.5,0.5,0.5}
 \definecolor{codepurple}{rgb}{0.58,0,0.82}
 \definecolor{backcolour}{rgb}{0.95,0.95,0.95}
 
-% Configure C style
-\lstdefinestyle{cstyle}{
+\lstdefinestyle{mystyle}{
     backgroundcolor=\color{backcolour},
     commentstyle=\color{codegreen},
-    keywordstyle=\color{blue},
+    keywordstyle=\color{magenta},
     numberstyle=\tiny\color{codegray},
     stringstyle=\color{codepurple},
     basicstyle=\ttfamily\footnotesize,
@@ -145,16 +140,7 @@ comply \textbf{will not be considered}.
     showspaces=false,
     showstringspaces=false,
     showtabs=false,
-    tabsize=2,
-    language=C
+    tabsize=2
 }
 
-\lstset{style=cstyle}
-
-
-\DeclareCaptionSubType{Listing}
-
-
-\begin{document}
-%CONTENT%
-\end{document}
+\lstset{style=mystyle}

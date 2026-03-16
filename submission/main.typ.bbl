@@ -1,0 +1,248 @@
+% $ biblatex auxiliary file $
+% $ biblatex bbl format version 3.3 $
+% Do not modify the above lines!
+%
+% This is an auxiliary file used by the 'biblatex' package.
+% This file may safely be deleted. It will be recreated by
+% biber as required.
+%
+\begingroup
+\makeatletter
+\@ifundefined{ver@biblatex.sty}
+  {\@latex@error
+     {Missing 'biblatex' package}
+     {The bibliography requires the 'biblatex' package.}
+      \aftergroup\endinput}
+  {}
+\endgroup
+
+
+\refsection{0}
+  \datalist[entry]{nty/global//global/global/global}
+    \entry{amd_epyc_7H12_spec}{manual}{}{}
+      \list{location}{1}{%
+        {Santa Clara, CA}%
+      }
+      \list{organization}{1}{%
+        {Advanced Micro Devices (AMD)}%
+      }
+      \field{sortinit}{A}
+      \field{sortinithash}{2f401846e2029bad6b3ecc16d50031e2}
+      \field{labeltitlesource}{title}
+      \field{note}{Accessed: 2026-02-17}
+      \field{title}{{AMD EPYC™ 7002 Series Processors}}
+      \field{year}{2020}
+      \verb{urlraw}
+      \verb https://www.amd.com/en/products/processors/server/epyc/7002-series.html
+      \endverb
+      \verb{url}
+      \verb https://www.amd.com/en/products/processors/server/epyc/7002-series.html
+      \endverb
+    \endentry
+    \entry{amd_epyc_7763_spec}{manual}{}{}
+      \list{location}{1}{%
+        {Santa Clara, CA}%
+      }
+      \list{organization}{1}{%
+        {Advanced Micro Devices (AMD)}%
+      }
+      \field{sortinit}{A}
+      \field{sortinithash}{2f401846e2029bad6b3ecc16d50031e2}
+      \field{labeltitlesource}{title}
+      \field{note}{Accessed: 2026-02-16}
+      \field{title}{{AMD EPYC™ 7763 Processors Specification}}
+      \field{year}{2021}
+      \verb{urlraw}
+      \verb https://www.amd.com/de/products/processors/server/epyc/7003-series/amd-epyc-7763.html
+      \endverb
+      \verb{url}
+      \verb https://www.amd.com/de/products/processors/server/epyc/7003-series/amd-epyc-7763.html
+      \endverb
+    \endentry
+    \entry{euler_docs}{manual}{}{}
+      \list{organization}{1}{%
+        {ETH Zürich}%
+      }
+      \field{sortinit}{E}
+      \field{sortinithash}{8da8a182d344d5b9047633dfc0cc9131}
+      \field{labeltitlesource}{title}
+      \field{note}{Accessed: 2026-02-16}
+      \field{title}{{Euler CPU Nodes Documentation}}
+      \field{year}{2026}
+      \verb{urlraw}
+      \verb https://docs.hpc.ethz.ch/hardware/cpu_nodes/
+      \endverb
+      \verb{url}
+      \verb https://docs.hpc.ethz.ch/hardware/cpu_nodes/
+      \endverb
+    \endentry
+    \entry{goto_gemm}{article}{}{}
+      \name{author}{2}{}{%
+        {{hash=446a04385a74124e540dfc0f293c4210}{%
+           family={Goto},
+           familyi={G\bibinitperiod},
+           given={Kazushige},
+           giveni={K\bibinitperiod}}}%
+        {{hash=c24e25fce28db56bd64a824fe2a60cc9}{%
+           family={Geijn},
+           familyi={G\bibinitperiod},
+           given={Robert\bibnamedelima A.},
+           giveni={R\bibinitperiod\bibinitdelim A\bibinitperiod},
+           prefix={van\bibnamedelima de},
+           prefixi={v\bibinitperiod\bibinitdelim d\bibinitperiod}}}%
+      }
+      \strng{namehash}{22b1c55cd6515764fde741eadfad9220}
+      \strng{fullhash}{22b1c55cd6515764fde741eadfad9220}
+      \strng{fullhashraw}{22b1c55cd6515764fde741eadfad9220}
+      \strng{bibnamehash}{22b1c55cd6515764fde741eadfad9220}
+      \strng{authorbibnamehash}{22b1c55cd6515764fde741eadfad9220}
+      \strng{authornamehash}{22b1c55cd6515764fde741eadfad9220}
+      \strng{authorfullhash}{22b1c55cd6515764fde741eadfad9220}
+      \strng{authorfullhashraw}{22b1c55cd6515764fde741eadfad9220}
+      \field{sortinit}{G}
+      \field{sortinithash}{32d67eca0634bf53703493fb1090a2e8}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{ACM Transactions on Mathematical Software}
+      \field{note}{Accessed: 2026-03-03}
+      \field{number}{3}
+      \field{title}{{Anatomy of High-Performance Matrix Multiplication}}
+      \field{volume}{34}
+      \field{year}{2008}
+      \verb{doi}
+      \verb 10.1145/1356052.1356053
+      \endverb
+      \verb{urlraw}
+      \verb https://doi.org/10.1145/1356052.1356053
+      \endverb
+      \verb{url}
+      \verb https://doi.org/10.1145/1356052.1356053
+      \endverb
+    \endentry
+    \entry{uops}{manual}{}{}
+      \list{organization}{1}{%
+        {Saarland Informatics Campus}%
+      }
+      \field{sortinit}{u}
+      \field{sortinithash}{6901a00e45705986ee5e7ca9fd39adca}
+      \field{labeltitlesource}{title}
+      \field{note}{Accessed: 2026-02-16}
+      \field{title}{{uops.info}}
+      \field{year}{2026}
+      \verb{urlraw}
+      \verb https://uops.info/table.html
+      \endverb
+      \verb{url}
+      \verb https://uops.info/table.html
+      \endverb
+    \endentry
+    \entry{gcc_manual}{manual}{}{}
+      \list{organization}{1}{%
+        {Free Software Foundation}%
+      }
+      \field{sortinit}{U}
+      \field{sortinithash}{6901a00e45705986ee5e7ca9fd39adca}
+      \field{labeltitlesource}{title}
+      \field{note}{Accessed: 2026-03-03}
+      \field{title}{{Using the GNU Compiler Collection (GCC)}}
+      \field{year}{2026}
+      \verb{urlraw}
+      \verb https://gcc.gnu.org/onlinedocs/gcc/
+      \endverb
+      \verb{url}
+      \verb https://gcc.gnu.org/onlinedocs/gcc/
+      \endverb
+    \endentry
+    \entry{blis_toms}{article}{}{}
+      \name{author}{2}{}{%
+        {{hash=d239254c980b976527b1e34612a79427}{%
+           family={Van\bibnamedelima Zee},
+           familyi={V\bibinitperiod\bibinitdelim Z\bibinitperiod},
+           given={Field\bibnamedelima G.},
+           giveni={F\bibinitperiod\bibinitdelim G\bibinitperiod}}}%
+        {{hash=c24e25fce28db56bd64a824fe2a60cc9}{%
+           family={Geijn},
+           familyi={G\bibinitperiod},
+           given={Robert\bibnamedelima A.},
+           giveni={R\bibinitperiod\bibinitdelim A\bibinitperiod},
+           prefix={van\bibnamedelima de},
+           prefixi={v\bibinitperiod\bibinitdelim d\bibinitperiod}}}%
+      }
+      \strng{namehash}{e92cacaeb49f5d2968c9e6de2470e1d1}
+      \strng{fullhash}{e92cacaeb49f5d2968c9e6de2470e1d1}
+      \strng{fullhashraw}{e92cacaeb49f5d2968c9e6de2470e1d1}
+      \strng{bibnamehash}{e92cacaeb49f5d2968c9e6de2470e1d1}
+      \strng{authorbibnamehash}{e92cacaeb49f5d2968c9e6de2470e1d1}
+      \strng{authornamehash}{e92cacaeb49f5d2968c9e6de2470e1d1}
+      \strng{authorfullhash}{e92cacaeb49f5d2968c9e6de2470e1d1}
+      \strng{authorfullhashraw}{e92cacaeb49f5d2968c9e6de2470e1d1}
+      \field{sortinit}{V}
+      \field{sortinithash}{afb52128e5b4dc4b843768c0113d673b}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{ACM Transactions on Mathematical Software}
+      \field{note}{Accessed: 2026-03-03}
+      \field{number}{3}
+      \field{title}{{BLIS}: A Framework for Rapidly Instantiating {BLAS} Functionality}
+      \field{volume}{41}
+      \field{year}{2015}
+      \verb{doi}
+      \verb 10.1145/2764454
+      \endverb
+      \verb{urlraw}
+      \verb https://doi.org/10.1145/2764454
+      \endverb
+      \verb{url}
+      \verb https://doi.org/10.1145/2764454
+      \endverb
+    \endentry
+    \entry{atlas}{article}{}{}
+      \name{author}{3}{}{%
+        {{hash=1f922cdac53c2cd8231aa30d926b6e4d}{%
+           family={Whaley},
+           familyi={W\bibinitperiod},
+           given={R.\bibnamedelimi Clint},
+           giveni={R\bibinitperiod\bibinitdelim C\bibinitperiod}}}%
+        {{hash=82653b0e8447d6571a4e179dd232d7f4}{%
+           family={Petitet},
+           familyi={P\bibinitperiod},
+           given={Antoine},
+           giveni={A\bibinitperiod}}}%
+        {{hash=0e7c85e7550c9cf876b4ddf487193e8f}{%
+           family={Dongarra},
+           familyi={D\bibinitperiod},
+           given={Jack\bibnamedelima J.},
+           giveni={J\bibinitperiod\bibinitdelim J\bibinitperiod}}}%
+      }
+      \strng{namehash}{bac1872f07623691f88bfe9f971358de}
+      \strng{fullhash}{bac1872f07623691f88bfe9f971358de}
+      \strng{fullhashraw}{bac1872f07623691f88bfe9f971358de}
+      \strng{bibnamehash}{bac1872f07623691f88bfe9f971358de}
+      \strng{authorbibnamehash}{bac1872f07623691f88bfe9f971358de}
+      \strng{authornamehash}{bac1872f07623691f88bfe9f971358de}
+      \strng{authorfullhash}{bac1872f07623691f88bfe9f971358de}
+      \strng{authorfullhashraw}{bac1872f07623691f88bfe9f971358de}
+      \field{sortinit}{W}
+      \field{sortinithash}{4315d78024d0cea9b57a0c6f0e35ed0d}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Parallel Computing}
+      \field{note}{Accessed: 2026-03-03}
+      \field{number}{1--2}
+      \field{title}{Automated Empirical Optimization of Software and the {ATLAS} Project}
+      \field{volume}{27}
+      \field{year}{2001}
+      \verb{doi}
+      \verb 10.1016/S0167-8191(00)00086-7
+      \endverb
+      \verb{urlraw}
+      \verb https://doi.org/10.1016/S0167-8191(00)00086-7
+      \endverb
+      \verb{url}
+      \verb https://doi.org/10.1016/S0167-8191(00)00086-7
+      \endverb
+    \endentry
+  \enddatalist
+\endrefsection
+\endinput
+
