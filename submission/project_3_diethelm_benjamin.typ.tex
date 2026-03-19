@@ -1,0 +1,174 @@
+\documentclass[unicode,10pt,a4paper,oneside,numbers=endperiod,openany]{scrartcl}
+
+\input{assignment.sty}
+\usepackage{amsmath}
+\usepackage{adjustbox}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{basicstyle=\ttfamily\footnotesize, breaklines=true}
+
+\begin{document}
+
+\setassignment
+\setduedate{09 March 2026, 18:00~(Europe/Zurich)}
+
+\serieheader{High-Performance Computing Lab for CSE}{2026}
+            {Student: Benjamin Diethelm}
+            {Discussed with: Lukas Ammann \linebreak \null\hfill Raphael Caixeta \linebreak \null\hfill Gian Laager}
+            {Report for Project 1}{}
+\newline
+
+ \section{System} We run all benchmarks on an Euler VII (phase II) node on an AMD EPYC 7763 CPU, unless stated differently. \texttt{g++} is used to compile the C++ code, with flags \texttt{-O3 -ffast-math -funroll-loops -march=native -fopenmp}.
+
+\section{Task: Implementing the linear algebra functions and the stencil operators [50 Points]} \subsection{HPC functions (\texttt{linalg.cpp})} The sequential implementation of the linear algebra functions is straight-forward. All of them (besides of \texttt{hpc\_norm2()}) consist of a basic \texttt{for}-loop over all elements, where the computation is done according to the comments. Note that we avoid calling \texttt{hpc} functions in one-another. In the sequential case, this might be the cleaner, shorter and less redundant approach. But keeping in mind that we will be parallelizing the functions, we avoid function calls to multiple functions that will be multi-threaded, as this would lead to more overhead due to less work being done in a single \texttt{\#omp parallel} region. For the precise implementation, see \texttt{mini\_app/linalg.cpp} (ignoring all \texttt{\#pragma omp}).
+
+\subsection{Stencil kernel (\texttt{operators.cpp})} We use the formulas provided in the project instructions. In the \texttt{diffusion()} function, we first have to set \(f_{i,j}^{k}\) for all \(i\) and \(j\) according to: \[f_{i,j}^{k} = \left\lbrack - (4 + \alpha)s_{i,j}^{k} + s_{i - 1,j}^{k} + s_{i + 1,j}^{k} + s_{i,j - 1}^{k} + s_{i,j + 1}^{k} + \beta s_{i,j}^{k}\left( 1 - s_{i,j}^{k} \right) \right\rbrack + \alpha s_{i,j}^{k - 1}\] This can be trivially translated to \texttt{C++} using double \texttt{for}-loops: \begin{lstlisting}[language=C++]
+for (int j = 1; j < jend; j++) {
+  for (int i = 1; i < iend; i++) {
+    f(i, j) = (-(4 + alpha) * s_new(i, j)
+               + s_new(i - 1, j)
+               + s_new(i + 1, j)
+               + s_new(i, j - 1)
+               + s_new(i, j + 1)
+               + beta * s_new(i, j) * (1 - s_new(i, j)))
+               + alpha * s_old(i, j);
+  }
+}
+\end{lstlisting}
+ Then we have to set our dirichlet boundary conditions, which we can do like this for the east + west boundary: \begin{lstlisting}[language=C++]
+for (int j = 0; j <= jend; j++) {
+  f(iend, j) = s_new(iend, j) - 0.1;
+  f(0, j) = s_new(0, j) - 0.1;
+}
+\end{lstlisting}
+ Note that the structure of the loops has changed slightly compared to the skeleton code. The reasoning for this is explained in Section \ref{sec:diff_par} North + south boundaries are implemented in the same fashion. The full code is available in \texttt{mini\_app/operators.cpp}, again ignoring all \texttt{\#pragma omp} statements.
+
+\subsection{Results} Since runtime is not relevant for this part and we are executing sequentially anyways, this code was executed locally instead of on euler. we run the script with \texttt{./main 128 1 0.00} to get the initial state (0 timesteps are not allowed). This gives: \begin{lstlisting}
+================================================================================
+                      Welcome to mini-stencil!
+version   :: C++ Serial
+mesh      :: 128 * 128 dx = 0.00787402
+time      :: 1 time steps from 0 .. 0
+iteration :: CG 300, Newton 50, tolerance 1e-06
+================================================================================
+ERROR: CG failed to converge
+step 1 ERROR : nonlinear iterations failed to converge
+--------------------------------------------------------------------------------
+simulation took 0.0449938 seconds
+301 conjugate gradient iterations, at rate of 6689.81 iters/second
+1 Newton iterations
+--------------------------------------------------------------------------------
+### 1, 128, 1, 301, 1, 0.0449938 ###
+Goodbye!
+\end{lstlisting}
+ Note that the convergence error is irelevant since our timestep is 0 and we are anyways only interested in the original state. The plot of this initial state (generated with the provided python plotting script) can be found in Fig. \ref{fig:initial}, it look as we would expect.
+
+To get the final solution, we run \texttt{./main 128 100 0.005} as provided in the project manual. We get the following output: \begin{lstlisting}
+================================================================================
+                      Welcome to mini-stencil!
+version   :: C++ Serial
+mesh      :: 128 * 128 dx = 0.00787402
+time      :: 100 time steps from 0 .. 0.005
+iteration :: CG 300, Newton 50, tolerance 1e-06
+================================================================================
+--------------------------------------------------------------------------------
+simulation took 0.227544 seconds
+1513 conjugate gradient iterations, at rate of 6649.26 iters/second
+300 Newton iterations
+--------------------------------------------------------------------------------
+### 1, 128, 100, 1513, 300, 0.227544 ###
+Goodbye!
+\end{lstlisting}
+ It shows no errors, our simulation did \(1513\) conjugate gradient iterations and \(300\) Newton iterations. This is the same as in the project manual, suggesting a working implementation. This is further confirmed by the plot in Fig. \ref{fig:final_seq}.
+
+ \begin{figure}[t]
+    \centering
+    \maxsizebox{\textwidth}{!}{\includegraphics{generated/6646151068746606972.pdf}}
+    \caption{Initial configuration (\(t = 0\), serial) for a \(128 \times 128\) grid.\label{fig:initial}}
+\end{figure}
+   \begin{figure}[t]
+    \centering
+    \maxsizebox{\textwidth}{!}{\includegraphics{generated/10097244141711820791.pdf}}
+    \caption{Final solution (\(t = 0.005\), serial) after \(1513\) conjugate gradient iterations and \(300\) Newton iterations on a \(128 \times 128\) grid with \(100\) timesteps.\label{fig:final_seq}}
+\end{figure}
+  
+
+\section{Task: Adding OpenMP to the nonlinear PDE mini-app [50 Points]} \subsection{Welcome message in \texttt{main.cpp} and serial compilation [5 Points]} We use compiler directives according to the project manual and the OpenMP specification~\cite{openmp_spec}. If we compile with \texttt{-fopenmp}, we enter a \texttt{\#pragma omp parallel sections} followed by \texttt{pragam single}, printing the number of threads. This way we print the thread number just once. It would also be possible to print the version from within the \texttt{single} region as well. If we compile without \texttt{-fopenmp}, we default to the serial welcome message. \begin{lstlisting}[language=C++]
+#ifdef _OPENMP
+std::cout << "version   :: C++ OpenMP" << std::endl;
+#pragma omp parallel sections
+{
+    #pragma single
+    std::cout << "threads   :: " << omp_get_num_threads() << std::endl;
+}
+#else
+std::cout << "version   :: C++ Serial" << std::endl;
+#endif
+\end{lstlisting}
+
+
+\subsection{Linear algebra kernel [10 Points]} Most of the \texttt{hpc} functions can be trivially parallelized by using a \texttt{\#pragam omp parralel for} in front of each \texttt{for}-loop. For the \texttt{hpc\_dot()} function, we need an additional \texttt{reduction(+:result)} clause since we are reducing both vectors \texttt{x} and \texttt{y} into a single variable. This has been implemented in \texttt{mini\_app/linalg.cpp}.
+
+\subsection{The diffusion stencil [15 Points]}\label{sec:diff_par}  We parallelize both the interior point computation and the boundary computation. This is implemented in \texttt{mini\_app/operators.cpp}. We use a single \texttt{parallel} region to minimize overhead and \texttt{nowait} wherever possible to minimize barriers.
+
+For the interior point computation, we use \texttt{\#pragma omp for collapse(2) nowait} to effectively parallelize the double for loop ofer all combinations of \texttt{i} and \texttt{j}.
+
+Setting the boundary conditions can be parallelized in the same manner, we put \texttt{\#pragma omp for nowait} in front of each for loop. We have additionally changed the structure from 4 loops to two loops, going over east + west and north + south boundarys in a single loop each. This should also reduce overhead as we now have fewer loops that do more work each.
+
+\subsection{Strong scaling [10 Points]} We evaluate strong scaling by fixing the problem size per curve and increasing the thread count from 1 to 16. The runtime distributions in Fig. \ref{fig:ss_dist} show that larger grids benefit substantially from parallelization, while very small grids are dominated by overhead. For \(64 \times 64\), absolute runtimes are already tiny and thread-management/synchronization costs dominate, so additional threads provide little to no benefit and can even hurt stability. \(128 \times 128\) improves only modestly for the same reason.
+
+For \(256 \times 256\) and especially \(512 \times 512\), the work per thread is large enough to amortize OpenMP overhead. This is reflected by the clear downward trend in runtime in Fig. \ref{fig:ss_dist} and by the speedup curves in Fig. \ref{fig:ss_speed}, where these cases approach much better scaling than the smaller grids.
+
+The \(1024 \times 1024\) case shows the strongest speedup in Fig. \ref{fig:ss_speed} and reaches close to the ideal line at high thread counts, indicating that the implementation can use the available cores effectively when the workload is sufficiently large.
+
+Some points in Fig. \ref{fig:ss_speed} show superlinear speedup. This can happen in practice due to cache effects and reduced memory pressure per thread, and can also be amplified by run-to-run noise. Overall, the plots consistently indicate that our OpenMP implementation scales well for medium-to-large problem sizes, while small grids are overhead-limited.
+
+\begin{figure}[t]
+    \centering
+    \maxsizebox{\textwidth}{!}{\includegraphics{generated/13492935041434782820.pdf}}
+    \caption{ Strong-scaling runtime distributions across thread counts (\(1,2,4,8,16\)) for fixed grid sizes (\(64 \times 64\) to \(1024 \times 1024\)). Measurements were performed on one Euler VII (phase II) AMD EPYC 7763 node (\texttt{--cpus-per-task=16}, \texttt{OMP\_PROC\_BIND=close}, \texttt{OMP\_PLACES=cores}), with 1 warmup run and 20 measured repetitions per configuration. Each run used 1000 timesteps and total simulation time \(t = 1.0\). \label{fig:ss_dist}}
+\end{figure}
+ 
+
+\begin{figure}[t]
+    \centering
+    \maxsizebox{\textwidth}{!}{\includegraphics{generated/12930987067829165025.pdf}}
+    \caption{ Strong-scaling speedup relative to 1 thread for each fixed grid size. Same experimental setup as in Fig. \ref{fig:ss_dist}. \label{fig:ss_speed}}
+\end{figure}
+ 
+
+\subsection{Weak scaling [10 Points]}
+
+In the weak-scaling experiment, we increase the problem size proportionally with the thread count, i.e., from \((64 \times 64,1)\) to \((128 \times 128,4)\), \((256 \times 256,16)\), and \((512 \times 512,64)\) for the base-\(64 \times 64\) series, and analogously for the other base resolutions. Ideally, the runtime would remain constant as the number of threads and problem size grow proportionally.
+
+The measured runtime distributions in Fig. \ref{fig:ws_dist} show a clear increase in time with scale factor for all three base resolutions. This indicates that the implementation is far from ideal weak scaling on the tested configurations. The spread of the distributions also grows for larger configurations (especially at 64 threads), pointing to increased run-to-run variability under higher parallel load.
+
+This trend is consistent with the efficiency curves in Fig. \ref{fig:ws_eff}: efficiency decreases monotonically with thread count, from 100\% at the 1-thread baseline to only a few percent at 64 threads. The time-to-solution view in Fig. \ref{fig:ws_time} confirms the same behavior directly: instead of remaining flat (ideal weak scaling), all curves increase strongly with scale factor, with the steepest growth for the largest base resolution.
+
+Overall, the weak-scaling results suggest that communication/synchronization overhead, memory-system pressure, and general parallel overhead dominate as the thread count and global problem size increase, preventing constant-time scaling.
+
+ \begin{figure}[t]
+    \centering
+    \maxsizebox{\textwidth}{!}{\includegraphics{generated/12228026800815543649.pdf}}
+    \caption{ Weak-scaling runtime distributions across configurations with proportional workload increase (\(1 \rightarrow 4 \rightarrow 16 \rightarrow 64\) threads and corresponding scaled grids). Experiments were run on Euler VII (phase II) AMD EPYC 7763 nodes with one warmup and 20 measured repetitions per configuration. Each run used total simulation time \(t = 1.0\), while timesteps and grid resolution were scaled with the weak-scaling factor. \label{fig:ws_dist}}
+\end{figure}
+   \begin{figure}[t]
+    \centering
+    \maxsizebox{\textwidth}{!}{\includegraphics{generated/10574079151139640603.pdf}}
+    \caption{ Weak-scaling efficiency relative to the 1-thread baseline for each base resolution. Same experimental setup as in Fig. \ref{fig:ws_dist}. \label{fig:ws_eff}}
+\end{figure}
+ 
+
+\begin{figure}[t]
+    \centering
+    \maxsizebox{\textwidth}{!}{\includegraphics{generated/3842691891534472361.pdf}}
+    \caption{ Weak-scaling time-to-solution as a function of configuration (thread count and proportionally scaled problem size). Same experimental setup as in Fig. \ref{fig:ws_dist}. \label{fig:ws_time}}
+\end{figure}
+  
+
+ 
+
+\printbibliography
+
+\end{document}

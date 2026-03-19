@@ -108,6 +108,7 @@ enum Elem {
     SymbolElem(SymbolElem),
     EquationElem(EquationElem),
     BoxElem(BoxElem),
+    GridElem(GridElem),
     PagebreakElem(PagebreakElem),
     EnumItem(EnumItem),
     ListItem(ListItem),
@@ -220,7 +221,6 @@ unused("HTML stuff") {
 
 unused("Grid should be handled manually") {
     GridCell(GridCell),
-    GridElem(GridElem),
     GridFooter(GridFooter),
     GridHLine(GridHLine),
     GridHeader(GridHeader),

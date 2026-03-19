@@ -50,20 +50,25 @@ impl<'a> codespan_reporting::files::Files<'a> for TypstWrapperWorld {
     fn line_index(&'a self, id: Self::FileId, byte_index: usize) -> Result<usize, Error> {
         match self.file(id) {
             Ok(f) => {
+                let bytes = f.as_slice();
+                if byte_index > bytes.len() {
+                    return Err(Error::IndexTooLarge {
+                        given: byte_index,
+                        max: bytes.len(),
+                    });
+                }
+
                 let mut line = 0;
-                for (i, b) in f.as_slice().iter().enumerate() {
+                for (i, b) in bytes.iter().enumerate() {
+                    if i >= byte_index {
+                        break;
+                    }
                     if *b == b'\n' {
                         line += 1;
                     }
-                    if i >= byte_index {
-                        return Ok(line);
-                    }
                 }
 
-                return Err(Error::IndexTooLarge {
-                    given: byte_index,
-                    max: line,
-                });
+                Ok(line)
             }
             Err(_) => Err(Error::FileMissing),
         }
@@ -81,12 +86,16 @@ impl<'a> codespan_reporting::files::Files<'a> for TypstWrapperWorld {
                 for (i, b) in f.as_slice().iter().enumerate() {
                     if *b == b'\n' {
                         if line == line_index {
-                            return Ok(line_start+1..i);
+                            return Ok(line_start..i);
                         } else {
                             line += 1;
-                            line_start = i;
+                            line_start = i + 1;
                         }
                     }
+                }
+
+                if line == line_index {
+                    return Ok(line_start..f.as_slice().len());
                 }
 
                 return Err(Error::LineTooLarge {

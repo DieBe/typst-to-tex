@@ -33,6 +33,8 @@ use typst::foundations::Styles;
 use typst::introspection::Introspector;
 use typst::layout::Abs;
 use typst::layout::Em;
+use typst::layout::GridChild;
+use typst::layout::GridItem;
 use typst::layout::Margin;
 use typst::layout::PageElem;
 use typst::layout::Ratio;
@@ -407,6 +409,102 @@ fn ensure_listings_preamble(mut source: String) -> String {
     source
 }
 
+fn strip_balanced_macro_call(mut source: String, macro_name: &str) -> String {
+    let marker = format!("#{macro_name}(");
+
+    while let Some(start) = source.find(&marker) {
+        let mut depth = 0usize;
+        let mut end = None;
+
+        let mut in_string = false;
+        let mut escaped = false;
+
+        for (idx, ch) in source[start + marker.len() - 1..].char_indices() {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if ch == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if ch == '"' {
+                    in_string = false;
+                }
+                continue;
+            }
+
+            match ch {
+                '"' => in_string = true,
+                '(' => depth += 1,
+                ')' => {
+                    if depth == 0 {
+                        continue;
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(start + marker.len() - 1 + idx + ch.len_utf8());
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let Some(mut end) = end else {
+            break;
+        };
+
+        while end < source.len() {
+            let tail = &source[end..];
+            if let Some(rest) = tail.strip_prefix("\r\n") {
+                end += 2;
+                if rest.starts_with('\n') {
+                    end += 1;
+                }
+                break;
+            }
+            if tail.starts_with('\n') {
+                end += 1;
+                break;
+            }
+            if tail.starts_with(' ') || tail.starts_with('\t') {
+                end += 1;
+                continue;
+            }
+            break;
+        }
+
+        source.replace_range(start..end, "");
+    }
+
+    source
+}
+
+fn preprocess_typst_source(source: &str) -> String {
+    let local_import_re = Regex::new(r#"(?m)^\s*#import\s*"@local/([^":]+):[^"]+"\s*:[^\n]*\n?"#)
+        .expect("local import regex should compile");
+    let local_import_names: Vec<String> = local_import_re
+        .captures_iter(source)
+        .filter_map(|cap| cap.get(1).map(|name| name.as_str().to_string()))
+        .collect();
+
+    let mut processed = local_import_re.replace_all(source, "").to_string();
+
+    for name in local_import_names {
+        let escaped = regex::escape(&name);
+        let show_rule_re = Regex::new(&format!(r"(?m)^\s*#show\s*:\s*{escaped}\s*\n?"))
+            .expect("show rule regex should compile");
+        processed = show_rule_re.replace_all(&processed, "").to_string();
+    }
+
+    // Known template helper from hpclab package; this is layout-only metadata.
+    processed = strip_balanced_macro_call(processed, "serieheader");
+
+    processed
+}
+
 fn get_source_text(span: Span, world: &TypstWrapperWorld) -> Option<String> {
     let file_id = span.id()?;
     let source = world.source(file_id).ok()?;
@@ -618,6 +716,35 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                 items.join("\n")
             ))
         }
+        elems::Elem::GridElem(grid_elem) => {
+            let mut converted_children = Vec::new();
+
+            for child in &grid_elem.children {
+                match child {
+                    GridChild::Item(item) => {
+                        if let GridItem::Cell(cell) = item {
+                            converted_children.push(into_latex(cell.body.clone(), sc, ctx)?);
+                        }
+                    }
+                    GridChild::Header(header) => {
+                        for item in &header.children {
+                            if let GridItem::Cell(cell) = item {
+                                converted_children.push(into_latex(cell.body.clone(), sc, ctx)?);
+                            }
+                        }
+                    }
+                    GridChild::Footer(footer) => {
+                        for item in &footer.children {
+                            if let GridItem::Cell(cell) = item {
+                                converted_children.push(into_latex(cell.body.clone(), sc, ctx)?);
+                            }
+                        }
+                    }
+                }
+            }
+
+            TexBlock::Seq(converted_children)
+        }
         elems::Elem::ParElem(par_elem) => into_latex(par_elem.body, sc, ctx)?,
         elems::Elem::ParLineMarker(_) => TexBlock::Nothing,
         elems::Elem::ParbreakElem(_) => TexBlock::String("\n\n".to_string()),
@@ -805,8 +932,9 @@ fn main() -> Result<()> {
     let template = std::fs::read_to_string(&config.template)
         .with_context(|| format!("Failed to read template from {}", config.template))?;
 
-    let main_source = std::fs::read_to_string(&config.content_main)
+    let main_source_raw = std::fs::read_to_string(&config.content_main)
         .with_context(|| format!("Failed to read {}", config.content_main))?;
+    let main_source = preprocess_typst_source(&main_source_raw);
 
     let world = TypstWrapperWorld::new(
         current_dir()

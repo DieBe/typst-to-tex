@@ -73,21 +73,21 @@ The key difference is that the EPYC 7H12 shares L3 cache across 4 cores while th
 
 \begin{table}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/2078514894107769213.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/15853960861298318217.pdf}}
     \caption{Memory hierarchy of an Euler VII (phase 1/2) node with an AMD EPYC 7H12/7763 CPU. Each core has its own L1 and L2 cache. L3 cache is shared among groups of 4 cores in phase 1 and in groups of 8 cores in phase 2.\label{tab:perf_mem_7763}}
 \end{table}
  
 
 \begin{figure}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/16755670864613476897.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/6377526862130354073.pdf}}
     \caption{Topology of an Euler VII (phase 1) node with an AMD EPYC 7H12 CPU.\label{fig:epyc_7h12}}
 \end{figure}
  
 
 \begin{figure}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/14823195174933777974.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/16156204331478293454.pdf}}
     \caption{Topology of an Euler VII (phase 2) node with an AMD EPYC 7763 CPU.\label{fig:epyc_7763}}
 \end{figure}
  
@@ -100,14 +100,14 @@ Tab. \ref{tab:stream_7h12} and Tab. \ref{tab:stream_7763} show the output from S
 
 \begin{table}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/17148538416284471003.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/13995748083104300913.pdf}}
     \caption{STREAM benchmark results for AMD EPYC 7H12 (Euler VII Phase 1).\label{tab:stream_7h12}}
 \end{table}
  
 
 \begin{table}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/10268484856541443796.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/5936117419463465897.pdf}}
     \caption{STREAM benchmark results for AMD EPYC 7763 (Euler VII Phase 2).\label{tab:stream_7763}}
 \end{table}
  
@@ -118,7 +118,7 @@ The plot was generated using \texttt{02/roofline\_plot.py}, refer to Fig. \ref{f
 
 \begin{figure}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/10040271792351427173.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/15401066031855344164.pdf}}
     \caption{Roofline model plot for Euler VII nodes.\label{fig:roofline_plot}}
 \end{figure}
  
@@ -184,7 +184,7 @@ The performance of \texttt{dgemm\_jki.c} demonstrates significant improvement ov
 
 \begin{figure}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/17962344798256748620.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/15520668701961763214.pdf}}
     \caption{Performance comparison of the naive, jki, OpenBLAS and 1/2/3-level blocking versions.\label{fig:variants}}
 \end{figure}
  
@@ -231,7 +231,7 @@ The incremental results in Fig. \ref{fig:steps} show that the largest single imp
 
 \begin{figure}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/11417480698388697726.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/11098391828362779878.pdf}}
     \caption{Performance comparison of the incremental optimizations in \texttt{dgemm\_blocked.c}.\label{fig:steps}}
 \end{figure}
  
@@ -242,35 +242,35 @@ For 3-level blocking, Fig. \ref{fig:l1l2_slices} and Fig. \ref{fig:l1l2_heatmap}
 
 \begin{figure}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/10791088260044445083.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/8757924707434660522.pdf}}
     \caption{Average percentage of peak performance as a function of \(S_{3}\) for 1-level blocking. Best result at \(S_{3} = 1152\) achieving 34.81\% of peak.\label{fig:l3}}
 \end{figure}
  
 
 \begin{figure}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/6144837719198306101.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/13434767790748840726.pdf}}
     \caption{Average percentage of peak performance as a function of \(S_{2}\) for 2-level blocking, with \(S_{3} = 1152\) fixed. The optimal \(S_{2} = 64\) achieves 51.4\% of peak.\label{fig:l2}}
 \end{figure}
  
 
 \begin{figure}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/16427836527324129039.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/9854709472188265678.pdf}}
     \caption{Average percentage of peak performance for 3-level blocking as a function of \(S_{1}\) and \(S_{2}\). Best result at \(S_{1} = 32\), \(S_{2} = 64\) achieving 25.26\% of peak.\label{fig:l1l2_slices}}
 \end{figure}
  
 
 \begin{figure}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/2136817171935039599.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/2061434689125365536.pdf}}
     \caption{Heatmap of average percentage of peak performance for 3-level blocking as a function of \(S_{1}\) and \(S_{2}\).\label{fig:l1l2_heatmap}}
 \end{figure}
  
 
 \begin{figure}[t]
     \centering
-    \maxsizebox{\textwidth}{!}{\includegraphics{generated/7673444607825336031.pdf}}
+    \maxsizebox{\textwidth}{!}{\includegraphics{/home/benjamin/code/ttt/submission/generated/9161148123824896444.pdf}}
     \caption{Performance comparison of various compilation flags for \texttt{dgemm\_blocked.c}.\label{fig:flags}}
 \end{figure}
  
