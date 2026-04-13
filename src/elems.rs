@@ -77,6 +77,7 @@ enum Elem {
     HideElem(HideElem),
     CiteElem(CiteElem),
     CiteGroup(CiteGroup),
+    BibliographyElem(BibliographyElem),
     EmphElem(EmphElem),
     EnumElem(EnumElem),
     FigureElem(FigureElem),
@@ -109,6 +110,7 @@ enum Elem {
     EquationElem(EquationElem),
     BoxElem(BoxElem),
     GridElem(GridElem),
+    ImageElem(ImageElem),
     PagebreakElem(PagebreakElem),
     EnumItem(EnumItem),
     ListItem(ListItem),
@@ -117,7 +119,6 @@ enum Elem {
 unused ("Inner element") {
     RawLine(RawLine),
     FootnoteEntry(FootnoteEntry),
-    BibliographyElem(BibliographyElem),
 }
 
 
@@ -205,7 +206,6 @@ unused ("Layout stuff") {
     CurveMove(CurveMove),
     CurveQuad(CurveQuad),
     EllipseElem(EllipseElem),
-    ImageElem(ImageElem),
     LineElem(LineElem),
     PathElem(PathElem),
     PolygonElem(PolygonElem),

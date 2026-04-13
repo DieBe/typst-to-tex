@@ -4,6 +4,7 @@ mod eval;
 mod world;
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::env::current_dir;
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -42,6 +43,7 @@ use typst::layout::Rel;
 use typst::layout::Sides;
 use typst::model::FigureElem;
 use typst::model::Supplement;
+use typst::loading::LoadSource;
 use typst::syntax::Span;
 use typst::text::RawContent;
 use typst::World;
@@ -84,12 +86,14 @@ struct Context<'a> {
     /// a summary of these at the end of the compilation process
     minor_issues: HashMap<MinorIssueKind, Vec<SourceDiagnostic>>,
 
-    input: &'a Utf8PathBuf,
+    in_grid: bool,
 
     eval_result: Option<HashMap<String, String>>,
 
     world: &'a TypstWrapperWorld,
     pandoc_preamble: Option<String>,
+    bibliography_resource: Option<String>,
+    local_labels: HashSet<String>,
 }
 
 #[derive(Facet)]
@@ -328,18 +332,24 @@ impl TexBlock {
             TexBlock::CodeBlock { code, language } => {
                 let lang_opt = language
                     .as_ref()
-                    .map(|lang| format!("[language={lang}]"))
+                    .map(|lang| format!("language={lang}"))
                     .unwrap_or_default();
+                let style_opt = "style=tttlisting";
+                let options = if lang_opt.is_empty() {
+                    style_opt.to_string()
+                } else {
+                    format!("{style_opt},{lang_opt}")
+                };
 
                 format!(
-                    "\\begin{{lstlisting}}{lang_opt}\n{code}\n\\end{{lstlisting}}\n"
+                    "\\begin{{lstlisting}}[{options}]\n{code}\n\\end{{lstlisting}}\n"
                 )
             }
             TexBlock::Ref(l) => {
                 let sup = match label_to_supplement(l) {
                     Some(sup) => sup,
                     None => {
-                        return format!("~\\cite{{{l}}}");
+                        return format!("\\ref{{{l}}}");
                     }
                 };
 
@@ -393,11 +403,97 @@ fn ensure_listings_preamble(mut source: String) -> String {
         return source;
     }
 
-    if source.contains(r#"\usepackage{listings}"#) {
+    let insertion = r#"\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{tttkeyword}{RGB}{0,60,160}
+\definecolor{tttcomment}{RGB}{0,115,0}
+\definecolor{tttstring}{RGB}{163,21,21}
+\definecolor{tttnumber}{RGB}{120,120,120}
+\lstdefinestyle{tttlisting}{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  breaklines=true,
+  keywordstyle=\color{tttkeyword}\bfseries,
+  commentstyle=\color{tttcomment},
+  stringstyle=\color{tttstring},
+  numberstyle=\tiny\color{tttnumber}
+}
+"#;
+
+    if !source.contains(r#"\usepackage{listings}"#) {
+        if let Some(idx) = source.find(r#"\begin{document}"#) {
+            source.insert_str(idx, insertion);
+        } else {
+            source.push('\n');
+            source.push_str(insertion);
+        }
+    } else {
+        if !source.contains(r#"\usepackage{xcolor}"#) {
+            if let Some(idx) = source.find(r#"\begin{document}"#) {
+                source.insert_str(idx, "\\usepackage{xcolor}\n");
+            } else {
+                source.push('\n');
+                source.push_str("\\usepackage{xcolor}\n");
+            }
+        }
+
+        if !source.contains(r#"\lstdefinestyle{tttlisting}"#) {
+            if let Some(idx) = source.find(r#"\begin{document}"#) {
+                source.insert_str(
+                    idx,
+                    "\\definecolor{tttkeyword}{RGB}{0,60,160}\n\\definecolor{tttcomment}{RGB}{0,115,0}\n\\definecolor{tttstring}{RGB}{163,21,21}\n\\definecolor{tttnumber}{RGB}{120,120,120}\n\\lstdefinestyle{tttlisting}{\n  basicstyle=\\ttfamily\\small,\n  columns=fullflexible,\n  keepspaces=true,\n  showstringspaces=false,\n  breaklines=true,\n  keywordstyle=\\color{tttkeyword}\\bfseries,\n  commentstyle=\\color{tttcomment},\n  stringstyle=\\color{tttstring},\n  numberstyle=\\tiny\\color{tttnumber}\n}\n",
+                );
+            } else {
+                source.push('\n');
+                source.push_str("\\definecolor{tttkeyword}{RGB}{0,60,160}\n\\definecolor{tttcomment}{RGB}{0,115,0}\n\\definecolor{tttstring}{RGB}{163,21,21}\n\\definecolor{tttnumber}{RGB}{120,120,120}\n\\lstdefinestyle{tttlisting}{\n  basicstyle=\\ttfamily\\small,\n  columns=fullflexible,\n  keepspaces=true,\n  showstringspaces=false,\n  breaklines=true,\n  keywordstyle=\\color{tttkeyword}\\bfseries,\n  commentstyle=\\color{tttcomment},\n  stringstyle=\\color{tttstring},\n  numberstyle=\\tiny\\color{tttnumber}\n}\n");
+            }
+        }
+    }
+
+    source
+}
+
+fn extract_simple_image_path(mut content: Content, sc: StyleChain) -> Option<String> {
+    content.materialize(sc);
+
+    match from_native(content) {
+        elems::Elem::ImageElem(img) => match img.source.derived.source.v {
+            LoadSource::Path(file_id) => {
+                let mut path = file_id.vpath().as_rooted_path().to_string_lossy().to_string();
+                if path.starts_with('/') {
+                    path.remove(0);
+                }
+                Some(path)
+            }
+            LoadSource::Bytes => None,
+        },
+        elems::Elem::StyledElem(styled) => {
+            let sc = sc.chain(styled.styles.as_slice());
+            extract_simple_image_path(styled.child, sc)
+        }
+        elems::Elem::SequenceElem(seq) => {
+            if seq.children.len() == 1 {
+                extract_simple_image_path(seq.children[0].clone(), sc)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn ensure_adjustbox_preamble(mut source: String) -> String {
+    if !source.contains("\\maxsizebox{") {
         return source;
     }
 
-    let insertion = "\\usepackage{listings}\n\\lstset{basicstyle=\\ttfamily\\small,columns=fullflexible,keepspaces=true,showstringspaces=false}\n";
+    if source.contains(r#"\usepackage{adjustbox}"#) {
+        return source;
+    }
+
+    let insertion = "\\usepackage{adjustbox}\n";
 
     if let Some(idx) = source.find(r#"\begin{document}"#) {
         source.insert_str(idx, insertion);
@@ -407,6 +503,97 @@ fn ensure_listings_preamble(mut source: String) -> String {
     }
 
     source
+}
+
+fn ensure_caption_preamble(mut source: String) -> String {
+    if !source.contains("\\captionof{") {
+        return source;
+    }
+
+    if source.contains(r#"\usepackage{caption}"#) {
+        return source;
+    }
+
+    let insertion = "\\usepackage{caption}\n";
+
+    if let Some(idx) = source.find(r#"\begin{document}"#) {
+        source.insert_str(idx, insertion);
+    } else {
+        source.push('\n');
+        source.push_str(insertion);
+    }
+
+    source
+}
+
+fn ensure_math_preamble(mut source: String) -> String {
+    let needs_amsfonts = source.contains("\\mathbb{");
+    let needs_amsmath = source.contains("\\text{");
+
+    if !needs_amsfonts && !needs_amsmath {
+        return source;
+    }
+
+    let mut insertion = String::new();
+
+    if needs_amsmath && !source.contains(r#"\usepackage{amsmath}"#) {
+        insertion.push_str("\\usepackage{amsmath}\n");
+    }
+
+    if needs_amsfonts
+        && !source.contains(r#"\usepackage{amsfonts}"#)
+        && !source.contains(r#"\usepackage{amssymb}"#)
+    {
+        insertion.push_str("\\usepackage{amsfonts}\n");
+    }
+
+    if insertion.is_empty() {
+        return source;
+    }
+
+    if let Some(idx) = source.find(r#"\begin{document}"#) {
+        source.insert_str(idx, &insertion);
+    } else {
+        source.push('\n');
+        source.push_str(&insertion);
+    }
+
+    source
+}
+
+fn ensure_bibliography_preamble(mut source: String, bibliography_resource: Option<&str>) -> String {
+    if !source.contains("\\printbibliography") {
+        return source;
+    }
+
+    let resource = bibliography_resource.unwrap_or("sources.bib");
+
+    let mut insertion = String::new();
+    if !source.contains(r#"\usepackage{biblatex}"#) {
+        insertion.push_str("\\usepackage[backend=biber]{biblatex}\n");
+    }
+    if !source.contains(r#"\addbibresource{"#) {
+        insertion.push_str(&format!("\\addbibresource{{{resource}}}\n"));
+    }
+
+    if insertion.is_empty() {
+        return source;
+    }
+
+    if let Some(idx) = source.find(r#"\begin{document}"#) {
+        source.insert_str(idx, &insertion);
+    } else {
+        source.push('\n');
+        source.push_str(&insertion);
+    }
+
+    source
+}
+
+fn extract_bibliography_resource(source: &str) -> Option<String> {
+    let re = Regex::new(r#"#bibliography\(\s*\"([^\"]+)\""#).ok()?;
+    re.captures(source)
+        .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
 }
 
 fn strip_balanced_macro_call(mut source: String, macro_name: &str) -> String {
@@ -563,6 +750,9 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
     content.materialize(sc);
 
     let label_text = content.label().map(|l| l.resolve().to_string());
+    if let Some(label_name) = &label_text {
+        ctx.local_labels.insert(label_name.clone());
+    }
     let label = TexBlock::Maybe(label_text.clone().map(TexBlock::Label).map(Box::new));
     let native = from_native(content.clone());
 
@@ -586,6 +776,7 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                 .collect();
             TexBlock::RawString(format!("\\cite{{{}}}", keys.join(",")))
         }
+        elems::Elem::BibliographyElem(_bib) => TexBlock::RawString("\\printbibliography".to_string()),
         elems::Elem::EmphElem(emph_elem) => TexBlock::String(format!(
             "\\textit{{{}}}",
             into_latex(emph_elem.body, sc, ctx,)?.emit(ctx.wild_figures, ctx.config)
@@ -609,16 +800,15 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             ))
         }
         elems::Elem::FigureElem(figure_elem) => {
-            let content = FigureElem::new(figure_elem.body.clone());
+            let filename = if let Some(path) = extract_simple_image_path(figure_elem.body.clone(), sc)
+            {
+                Utf8PathBuf::from(path)
+            } else {
+                let content = FigureElem::new(figure_elem.body.clone());
 
-            // Keep a concrete width so `image(..., width: 100%)` inside figures can resolve.
-            let filename = compile_subcontent(
-                content.pack(),
-                sc,
-                ctx.engine,
-                ctx.generated_dir,
-                Some(469.47),
-            )?;
+                // Keep a concrete width so `image(..., width: 100%)` inside figures can resolve.
+                compile_subcontent(content.pack(), sc, ctx.engine, ctx.generated_dir, Some(469.47))?
+            };
 
             if let Some(Some(Supplement::Content(c))) =
                 figure_elem.supplement.get_ref(sc).clone().custom()
@@ -641,10 +831,38 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
                 .map(|cap| TexBlock::Seq(vec![cap, label]))
                 .map(Box::new);
 
-            TexBlock::Figure {
-                content_file: filename,
-                caption,
-                supplement: label_text.and_then(|s| label_to_supplement(&s)),
+            if ctx.in_grid {
+                let caption_text = figure_elem
+                    .caption
+                    .get_ref(sc)
+                    .as_ref()
+                    .map(|cap| into_latex(cap.body.clone(), sc, ctx))
+                    .transpose()?
+                    .map(|cap| cap.emit(ctx.wild_figures, ctx.config));
+                let label_tex = label_text
+                    .as_ref()
+                    .map(|l| format!("\\label{{{l}}}"))
+                    .unwrap_or_default();
+
+                let caption_tex = caption_text
+                    .map(|cap| format!("\\captionof{{figure}}{{{cap}}}"))
+                    .unwrap_or_default();
+
+                TexBlock::RawString(indoc::formatdoc!(
+                    r#"
+                    \begin{{center}}
+                    \maxsizebox{{\linewidth}}{{!}}{{\includegraphics{{{filename}}}}}
+                    {caption_tex}
+                    {label_tex}
+                    \end{{center}}
+                    "#
+                ))
+            } else {
+                TexBlock::Figure {
+                    content_file: filename,
+                    caption,
+                    supplement: label_text.and_then(|s| label_to_supplement(&s)),
+                }
             }
         }
         elems::Elem::EquationElem(eq) => {
@@ -717,33 +935,66 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             ))
         }
         elems::Elem::GridElem(grid_elem) => {
-            let mut converted_children = Vec::new();
+            let columns = grid_elem.columns.get_ref(sc).0.len().max(1);
+            let mut cells = Vec::new();
+
+            let prev_in_grid = ctx.in_grid;
+            ctx.in_grid = true;
 
             for child in &grid_elem.children {
                 match child {
                     GridChild::Item(item) => {
                         if let GridItem::Cell(cell) = item {
-                            converted_children.push(into_latex(cell.body.clone(), sc, ctx)?);
+                            let cell_tex = into_latex(cell.body.clone(), sc, ctx)?
+                                .emit(ctx.wild_figures, ctx.config);
+                            cells.push(cell_tex);
                         }
                     }
                     GridChild::Header(header) => {
                         for item in &header.children {
                             if let GridItem::Cell(cell) = item {
-                                converted_children.push(into_latex(cell.body.clone(), sc, ctx)?);
+                                let cell_tex = into_latex(cell.body.clone(), sc, ctx)?
+                                    .emit(ctx.wild_figures, ctx.config);
+                                cells.push(cell_tex);
                             }
                         }
                     }
                     GridChild::Footer(footer) => {
                         for item in &footer.children {
                             if let GridItem::Cell(cell) = item {
-                                converted_children.push(into_latex(cell.body.clone(), sc, ctx)?);
+                                let cell_tex = into_latex(cell.body.clone(), sc, ctx)?
+                                    .emit(ctx.wild_figures, ctx.config);
+                                cells.push(cell_tex);
                             }
                         }
                     }
                 }
             }
 
-            TexBlock::Seq(converted_children)
+            ctx.in_grid = prev_in_grid;
+
+            if cells.is_empty() {
+                TexBlock::Nothing
+            } else {
+                let col_spec = (0..columns).map(|_| "p{0.48\\linewidth}").join("");
+                let mut rows = Vec::new();
+
+                for row_cells in cells.chunks(columns) {
+                    let mut row = Vec::new();
+                    for cell in row_cells {
+                        row.push(format!("\\begin{{minipage}}[t]{{\\linewidth}}\n{cell}\n\\end{{minipage}}"));
+                    }
+                    while row.len() < columns {
+                        row.push("".to_string());
+                    }
+                    rows.push(row.join(" & "));
+                }
+
+                TexBlock::RawString(format!(
+                    "\\begin{{center}}\\begin{{tabular}}{{{col_spec}}}\n{}\n\\end{{tabular}}\\end{{center}}",
+                    rows.join(" \\\\\n")
+                ))
+            }
         }
         elems::Elem::ParElem(par_elem) => into_latex(par_elem.body, sc, ctx)?,
         elems::Elem::ParLineMarker(_) => TexBlock::Nothing,
@@ -752,7 +1003,14 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             warn_here!("Unsupported QuoteElem");
             TexBlock::Nothing
         }
-        elems::Elem::RefElem(ref_elem) => TexBlock::Ref(ref_elem.target.resolve().to_string()),
+        elems::Elem::RefElem(ref_elem) => {
+            let target = ref_elem.target.resolve().to_string();
+            if label_to_supplement(&target).is_some() || ctx.local_labels.contains(&target) {
+                TexBlock::Ref(target)
+            } else {
+                TexBlock::RawString(format!("~\\cite{{{target}}}"))
+            }
+        }
         elems::Elem::HighlightElem(_highlight_elem) => {
             warn_here!("Unsupported HighlightElem");
             TexBlock::Nothing
@@ -871,6 +1129,21 @@ fn into_latex(mut content: Content, sc: StyleChain, ctx: &mut Context) -> Result
             ));
             TexBlock::Nothing
         }
+        elems::Elem::ImageElem(image) => {
+            match image.source.derived.source.v {
+                LoadSource::Path(file_id) => {
+                    let mut path = file_id.vpath().as_rooted_path().to_string_lossy().to_string();
+                    if path.starts_with('/') {
+                        path.remove(0);
+                    }
+                    TexBlock::RawString(format!("\\includegraphics{{{path}}}"))
+                }
+                LoadSource::Bytes => {
+                    let filename = compile_subcontent(image.pack(), sc, ctx.engine, ctx.generated_dir, None)?;
+                    TexBlock::RawString(format!("\\includegraphics{{{filename}}}"))
+                }
+            }
+        }
         elems::Elem::PagebreakElem(_) => {
             TexBlock::RawString("\\pagebreak".to_string())
         }
@@ -934,6 +1207,7 @@ fn main() -> Result<()> {
 
     let main_source_raw = std::fs::read_to_string(&config.content_main)
         .with_context(|| format!("Failed to read {}", config.content_main))?;
+    let bibliography_resource = extract_bibliography_resource(&main_source_raw);
     let main_source = preprocess_typst_source(&main_source_raw);
 
     let world = TypstWrapperWorld::new(
@@ -972,10 +1246,12 @@ fn main() -> Result<()> {
         generated_dir: &generated_dir,
         last_smart_quote: SmartQuoteState::Closed,
         minor_issues: HashMap::new(),
-        input: &config.content_main,
+        in_grid: false,
         eval_result,
         world: &world,
         pandoc_preamble,
+        bibliography_resource,
+        local_labels: HashSet::new(),
     };
 
     let result = (|| {
@@ -1009,6 +1285,10 @@ fn main() -> Result<()> {
         let latex_source = list_merge_regex.replace_all(&latex_source, "\n");
 
         let latex_source = ensure_listings_preamble(latex_source.to_string());
+        let latex_source = ensure_adjustbox_preamble(latex_source);
+        let latex_source = ensure_caption_preamble(latex_source);
+        let latex_source = ensure_math_preamble(latex_source);
+        let latex_source = ensure_bibliography_preamble(latex_source, ctx.bibliography_resource.as_deref());
 
         let filename = format!("{}.tex", config.content_main);
         std::fs::write(filename, latex_source)
