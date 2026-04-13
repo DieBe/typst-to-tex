@@ -1,21 +1,30 @@
 # Typst To Tex (ttt)
 
-**Problem**: You want to write your papers in typst, but conferences and journals want latex sources. This is an attempt at a solution to that problem. It compiles a typst document to a latex document doing most of the heavy lifting, and allows you to do the final touchups with inline latex, maintaining a source of truth.
+**Problem**: You want to write your papers in Typst, but conferences and journals want LaTeX sources. `ttt` is an attempt at solving that problem. It compiles a Typst document to LaTeX, does most of the heavy lifting automatically, and lets you finish the last mile with inline LaTeX so you still keep a single source of truth.
 
-Broadly, a Typst or LaTeX document contains three things
+This repository is a fork of the original `ttt` at commit `ad35218edb6bca45b4cea02cc4ff57f434e732cc`. Since then, the fork has grown several extensions and behavior changes. The main additions are:
 
-- Lightly styled text content
-- Fancy content like generated figures, code blocks, inline code, and math
-- Layout
+- code block support, including language mapping and `lstlisting` output
+- better automatic preamble injection for packages such as `adjustbox`, `caption`, `listings`, `xcolor`, `amsmath`, `amsfonts`, and `biblatex`
+- bibliography resource extraction from the Typst source
+- optional `ttt-eval` support for resolving stateful Typst-derived values
+- preprocessing for local imports and some template-specific helpers
+- improved handling of figures, grid layout, and labels
+- a new math pipeline using Pandoc, described below
 
-Typst is nice for all three but for submissions, we need layout to be done by latex.
+Broadly, a Typst or LaTeX document contains three things:
 
- Translating lightly styled text content is easy to do as an AST replacement.
+- lightly styled text content
+- fancy content like generated figures, code blocks, inline code, and math
+- layout
 
- Translating fancy content to equivalent LaTeX is bordering on impossible, so here typstex generates a pdf with the content and uses `\includepdf` to put it at the right place and shape in the document.
+Typst is still a good authoring language for all three, but for journal and conference submissions the final layout often has to be handled by LaTeX.
 
-Layout cannot be done by typst if we want to use journal templates, here, you
-can add `latexraw` blocks to your typst document to have one source of truth.
+Lightly styled text content is translated through AST replacement.
+
+Fancy content is handled in a more mixed way. Figures and other generated assets are often rendered to PDFs and inserted into the LaTeX output with `\includegraphics` or similar. Inline code and listings are rendered directly into LaTeX constructs. Some layout-sensitive elements are emitted as raw LaTeX when that is the most reliable representation.
+
+Layout itself is not delegated to Typst when a journal template needs to control the final document. Instead, you can add `latexraw` blocks to your Typst document so that the Typst source stays the source of truth while still allowing template-specific LaTeX structure.
 
 ## Usage
 
@@ -121,11 +130,18 @@ that rely on state but which can be implemented in latex.
 
 ## Context
 
-While full `context` translation is unlikely to ever work with this, it is still sometimes
-useful to have references in the document. To support this, `ttt` supports a `typst eval` based
-approach.
+While full `context` translation is unlikely to ever work with this, it is still sometimes useful to have references in the document. To support this, `ttt` includes a `typst eval`-based escape hatch.
 
-This system is based on three parts. First
+The idea is:
+
+1. compile the document once in a mode that can evaluate Typst state
+2. collect the values you want to materialize into a `ttt-state` metadata block
+3. run the normal translation pass and substitute `ttt-eval` raw blocks from that collected state
+
+This lets you keep a Typst-native authoring experience for stateful helpers, while still producing LaTeX from a mostly static translation pass.
+
+For example, line-number references can be implemented like this:
+
 ```typst
 #let result = state("ttt_eval", (:))
 
@@ -138,11 +154,10 @@ This system is based on three parts. First
 
 #let emit = context {[#metadata(result.final()) <ttt-state>]}
 ```
-which I will put on typst universe eventually, but for now, just put it in your project.
 
-In non-ttt mode (see above), use the `add` function to add any values you want to render in the final document. In `ttt` mode, emit a `ttt-state` raw block, containing the key that you added with `add`. Finally, put the `emit` part somewhere in your document where it will be rendered.
+In non-`ttt` mode, call `add` to store values that should appear in the final document. In `ttt` mode, emit a `ttt-state` raw block containing the lookup key, and place `emit` somewhere in the document so the collected state is available.
 
-For example, here is how line number references can be implemented
+A representative lookup helper looks like this:
 
 ```typst
 #let lookup_line(name) = {
@@ -166,10 +181,12 @@ For example, here is how line number references can be implemented
 
 ## Limitations
 
-Currently, the system supports what I've needed for my papers, most other things are relatively easy to add support for, it just needs someone to do it. There are some exceptions however:
+The current fork covers the workflows I needed for my papers, and it has also drifted in a few places from the original version. The most notable remaining quirks are:
 
-- Typst infers supplements for things like figures, while latex does not. I.e. you can write `@fig1` in typst but need to write `Figure~\ref{fig1}` in latex. I have not found a way to infer the supplement, so for now, you have to prefix your references with `fig:`, `tab:` and `lst:`. With no prefix, it is assumed that the reference is a citation
-- Anything using `state` in typst will be very difficult to support. Currently, the compiler uses the typst frontend but does not do layout, state is resolved during layout which means this technique does not work.
+- Typst infers supplements for things like figures, while LaTeX does not. In Typst you can write `@fig1`, but in LaTeX you need `Figure~\ref{fig1}`. `ttt` currently relies on prefixes such as `fig:`, `tab:` and `lst:` to guess the right wording. With no prefix, a reference is assumed to be a citation.
+- Anything relying on Typst `state` is hard to translate directly, because the compiler uses the Typst frontend but not full layout. The `ttt-eval` workflow is the workaround for that.
+- Math is no longer handled by a single export path. The fork now tries to convert equations through Pandoc first, and falls back to rendering the math as a PDF when that fails. This is more robust for real-world papers, especially when Typst math contains constructs that do not map cleanly to LaTeX.
+- Some Typst elements are still intentionally ignored or approximated when a faithful LaTeX equivalent is not practical.
 
 # TODOs
 - [x] Code blocks
